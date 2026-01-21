@@ -1,1 +1,4 @@
 project_id = "xvjpbllyedxjadzexsmr"
+
+[functions.asaas-payment]
+verify_jwt = false
