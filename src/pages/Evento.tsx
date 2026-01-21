@@ -1,6 +1,6 @@
 import { Layout } from "@/components/Layout";
 import { useWeddingSettings } from "@/hooks/useWeddingSettings";
-import { MapPin, Clock, Shirt, ExternalLink } from "lucide-react";
+import { MapPin, Shirt, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -27,11 +27,43 @@ const Evento = () => {
     });
   };
 
-  const openInMaps = (address: string | null | undefined) => {
-    if (!address) return;
-    const encoded = encodeURIComponent(address);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, "_blank");
+  const openInMaps = (mapUrl: string | null | undefined, address: string | null | undefined) => {
+    if (mapUrl) {
+      window.open(mapUrl, "_blank");
+    } else if (address) {
+      const encoded = encodeURIComponent(address);
+      window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, "_blank");
+    }
   };
+
+  // Extract place ID or coordinates from Google Maps URL for embed
+  const getEmbedUrl = (mapUrl: string | null | undefined, address: string | null | undefined) => {
+    if (mapUrl) {
+      // Try to extract place from URL
+      const placeMatch = mapUrl.match(/place\/([^\/]+)/);
+      if (placeMatch) {
+        return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${encodeURIComponent(placeMatch[1])}`;
+      }
+      
+      // Try to extract coordinates
+      const coordMatch = mapUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (coordMatch) {
+        return `https://www.google.com/maps/embed/v1/view?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&center=${coordMatch[1]},${coordMatch[2]}&zoom=15`;
+      }
+    }
+    
+    if (address) {
+      return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${encodeURIComponent(address)}`;
+    }
+    
+    return null;
+  };
+
+  const ceremonyMapUrl = (settings as any)?.ceremony_map_url;
+  const receptionMapUrl = (settings as any)?.reception_map_url;
+  
+  const ceremonyEmbedUrl = getEmbedUrl(ceremonyMapUrl, settings?.ceremony_address);
+  const receptionEmbedUrl = getEmbedUrl(receptionMapUrl, settings?.reception_address);
 
   return (
     <Layout>
@@ -55,7 +87,7 @@ const Evento = () => {
             </div>
           )}
 
-          <div className="max-w-xl mx-auto">
+          <div className="max-w-2xl mx-auto space-y-8">
             {/* Cerimônia */}
             <Card className="elegant-shadow">
               <CardHeader className="text-center pb-4">
@@ -71,11 +103,28 @@ const Evento = () => {
                     {settings.ceremony_address && (
                       <p className="text-muted-foreground">{settings.ceremony_address}</p>
                     )}
-                    {settings.ceremony_address && (
+                    
+                    {/* Mini Map */}
+                    {ceremonyEmbedUrl && (
+                      <div className="rounded-lg overflow-hidden border mt-4">
+                        <iframe
+                          src={ceremonyEmbedUrl}
+                          width="100%"
+                          height="200"
+                          style={{ border: 0 }}
+                          allowFullScreen
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          title="Mapa da Cerimônia"
+                        />
+                      </div>
+                    )}
+                    
+                    {(ceremonyMapUrl || settings.ceremony_address) && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => openInMaps(settings.ceremony_address)}
+                        onClick={() => openInMaps(ceremonyMapUrl, settings.ceremony_address)}
                         className="mt-4"
                       >
                         <ExternalLink className="w-4 h-4 mr-2" />
@@ -88,22 +137,68 @@ const Evento = () => {
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          {/* Dress Code */}
-          {settings?.dress_code && (
-            <Card className="max-w-xl mx-auto mt-12 elegant-shadow">
-              <CardHeader className="text-center pb-4">
-                <div className="w-16 h-16 rounded-full bg-champagne flex items-center justify-center mx-auto mb-4">
-                  <Shirt className="w-8 h-8 text-gold" />
-                </div>
-                <CardTitle className="font-serif text-2xl">Dress Code</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center">
-                <p className="text-lg">{settings.dress_code}</p>
-              </CardContent>
-            </Card>
-          )}
+            {/* Recepção - show only if different from ceremony */}
+            {settings?.reception_location && settings.reception_location !== settings.ceremony_location && (
+              <Card className="elegant-shadow">
+                <CardHeader className="text-center pb-4">
+                  <div className="w-16 h-16 rounded-full bg-champagne flex items-center justify-center mx-auto mb-4">
+                    <MapPin className="w-8 h-8 text-gold" />
+                  </div>
+                  <CardTitle className="font-serif text-2xl">Recepção</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center space-y-4">
+                  <p className="font-medium text-lg">{settings.reception_location}</p>
+                  {settings.reception_address && (
+                    <p className="text-muted-foreground">{settings.reception_address}</p>
+                  )}
+                  
+                  {/* Mini Map */}
+                  {receptionEmbedUrl && (
+                    <div className="rounded-lg overflow-hidden border mt-4">
+                      <iframe
+                        src={receptionEmbedUrl}
+                        width="100%"
+                        height="200"
+                        style={{ border: 0 }}
+                        allowFullScreen
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                        title="Mapa da Recepção"
+                      />
+                    </div>
+                  )}
+                  
+                  {(receptionMapUrl || settings.reception_address) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openInMaps(receptionMapUrl, settings.reception_address)}
+                      className="mt-4"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Ver no mapa
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Dress Code */}
+            {settings?.dress_code && (
+              <Card className="elegant-shadow">
+                <CardHeader className="text-center pb-4">
+                  <div className="w-16 h-16 rounded-full bg-champagne flex items-center justify-center mx-auto mb-4">
+                    <Shirt className="w-8 h-8 text-gold" />
+                  </div>
+                  <CardTitle className="font-serif text-2xl">Dress Code</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <p className="text-lg">{settings.dress_code}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
     </Layout>

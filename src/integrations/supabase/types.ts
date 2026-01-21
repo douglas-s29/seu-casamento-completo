@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      gift_purchases: {
+        Row: {
+          amount: number
+          gift_id: string
+          id: string
+          purchased_at: string
+          purchaser_email: string | null
+          purchaser_name: string
+        }
+        Insert: {
+          amount: number
+          gift_id: string
+          id?: string
+          purchased_at?: string
+          purchaser_email?: string | null
+          purchaser_name: string
+        }
+        Update: {
+          amount?: number
+          gift_id?: string
+          id?: string
+          purchased_at?: string
+          purchaser_email?: string | null
+          purchaser_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gift_purchases_gift_id_fkey"
+            columns: ["gift_id"]
+            isOneToOne: false
+            referencedRelation: "gifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gifts: {
         Row: {
           category: string | null
@@ -23,6 +58,8 @@ export type Database = {
           image_url: string | null
           name: string
           price: number
+          purchase_count: number
+          purchase_limit: number
           purchased: boolean
           purchased_at: string | null
           purchaser_email: string | null
@@ -37,6 +74,8 @@ export type Database = {
           image_url?: string | null
           name: string
           price: number
+          purchase_count?: number
+          purchase_limit?: number
           purchased?: boolean
           purchased_at?: string | null
           purchaser_email?: string | null
@@ -51,6 +90,8 @@ export type Database = {
           image_url?: string | null
           name?: string
           price?: number
+          purchase_count?: number
+          purchase_limit?: number
           purchased?: boolean
           purchased_at?: string | null
           purchaser_email?: string | null
@@ -188,13 +229,16 @@ export type Database = {
           bride_name: string
           ceremony_address: string | null
           ceremony_location: string | null
+          ceremony_map_url: string | null
           created_at: string
           dress_code: string | null
+          gift_purchase_limit: number
           groom_name: string
           id: string
           pix_key: string | null
           reception_address: string | null
           reception_location: string | null
+          reception_map_url: string | null
           story_text: string | null
           updated_at: string
           wedding_date: string | null
@@ -205,13 +249,16 @@ export type Database = {
           bride_name?: string
           ceremony_address?: string | null
           ceremony_location?: string | null
+          ceremony_map_url?: string | null
           created_at?: string
           dress_code?: string | null
+          gift_purchase_limit?: number
           groom_name?: string
           id?: string
           pix_key?: string | null
           reception_address?: string | null
           reception_location?: string | null
+          reception_map_url?: string | null
           story_text?: string | null
           updated_at?: string
           wedding_date?: string | null
@@ -222,13 +269,16 @@ export type Database = {
           bride_name?: string
           ceremony_address?: string | null
           ceremony_location?: string | null
+          ceremony_map_url?: string | null
           created_at?: string
           dress_code?: string | null
+          gift_purchase_limit?: number
           groom_name?: string
           id?: string
           pix_key?: string | null
           reception_address?: string | null
           reception_location?: string | null
+          reception_map_url?: string | null
           story_text?: string | null
           updated_at?: string
           wedding_date?: string | null

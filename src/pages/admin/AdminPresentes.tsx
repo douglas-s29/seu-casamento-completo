@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useGifts, useAddGift, useUpdateGift, useDeleteGift } from "@/hooks/useGifts";
-import { Plus, Trash2, Check, Pencil, Upload, X, Image } from "lucide-react";
+import { useGiftPurchases } from "@/hooks/useGiftPurchases";
+import { useWeddingSettings } from "@/hooks/useWeddingSettings";
+import { Plus, Trash2, Check, Pencil, X, Image, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,9 +14,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Gift } from "@/hooks/useGifts";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 const AdminPresentes = () => {
   const { data: gifts } = useGifts();
+  const { data: purchases } = useGiftPurchases();
+  const { data: settings } = useWeddingSettings();
   const addGift = useAddGift();
   const updateGift = useUpdateGift();
   const deleteGift = useDeleteGift();
@@ -27,7 +32,11 @@ const AdminPresentes = () => {
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [purchaseLimit, setPurchaseLimit] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [expandedGifts, setExpandedGifts] = useState<Set<string>>(new Set());
+
+  const globalLimit = (settings as any)?.gift_purchase_limit || 8;
 
   const openAddDialog = () => {
     setEditingGift(null);
@@ -36,6 +45,7 @@ const AdminPresentes = () => {
     setCategory("");
     setDescription("");
     setImageUrl("");
+    setPurchaseLimit(String(globalLimit));
     setShowDialog(true);
   };
 
@@ -46,6 +56,7 @@ const AdminPresentes = () => {
     setCategory(gift.category || "");
     setDescription(gift.description || "");
     setImageUrl(gift.image_url || "");
+    setPurchaseLimit(String((gift as any).purchase_limit || globalLimit));
     setShowDialog(true);
   };
 
@@ -54,11 +65,22 @@ const AdminPresentes = () => {
     setEditingGift(null);
   };
 
+  const toggleExpanded = (giftId: string) => {
+    setExpandedGifts(prev => {
+      const next = new Set(prev);
+      if (next.has(giftId)) {
+        next.delete(giftId);
+      } else {
+        next.add(giftId);
+      }
+      return next;
+    });
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith("image/")) {
       toast({
         title: "Erro",
@@ -68,7 +90,6 @@ const AdminPresentes = () => {
       return;
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast({
         title: "Erro",
@@ -119,6 +140,8 @@ const AdminPresentes = () => {
     }
 
     try {
+      const limit = parseInt(purchaseLimit) || globalLimit;
+      
       if (editingGift) {
         await updateGift.mutateAsync({
           id: editingGift.id,
@@ -127,7 +150,8 @@ const AdminPresentes = () => {
           category: category.trim() || null,
           description: description.trim() || null,
           image_url: imageUrl || null,
-        });
+          purchase_limit: limit,
+        } as any);
         toast({ title: "Presente atualizado!" });
       } else {
         await addGift.mutateAsync({
@@ -136,7 +160,8 @@ const AdminPresentes = () => {
           category: category.trim() || null,
           description: description.trim() || null,
           image_url: imageUrl || null,
-        });
+          purchase_limit: limit,
+        } as any);
         toast({ title: "Presente adicionado!" });
       }
       closeDialog();
@@ -158,6 +183,10 @@ const AdminPresentes = () => {
   const formatCurrency = (v: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
+  const getGiftPurchases = (giftId: string) => {
+    return purchases?.filter(p => p.gift_id === giftId) || [];
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -177,61 +206,110 @@ const AdminPresentes = () => {
                 <TableHead>Nome</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Categoria</TableHead>
+                <TableHead>Vendas</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Presenteado por</TableHead>
                 <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {gifts?.map((gift) => (
-                <TableRow key={gift.id}>
-                  <TableCell>
-                    {gift.image_url ? (
-                      <img
-                        src={gift.image_url}
-                        alt={gift.name}
-                        className="w-12 h-12 object-cover rounded"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
-                        <Image className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium">{gift.name}</TableCell>
-                  <TableCell>{formatCurrency(Number(gift.price))}</TableCell>
-                  <TableCell>{gift.category || "-"}</TableCell>
-                  <TableCell>
-                    {gift.purchased ? (
-                      <Badge className="bg-success">
-                        <Check className="w-3 h-3 mr-1" />
-                        Comprado
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary">Disponível</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{gift.purchaser_name || "-"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditDialog(gift)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(gift.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {gifts?.map((gift) => {
+                const giftPurchases = getGiftPurchases(gift.id);
+                const purchaseCount = (gift as any).purchase_count || 0;
+                const limit = (gift as any).purchase_limit || globalLimit;
+                const isSoldOut = purchaseCount >= limit;
+                
+                return (
+                  <Collapsible key={gift.id} asChild open={expandedGifts.has(gift.id)}>
+                    <>
+                      <TableRow className="cursor-pointer" onClick={() => giftPurchases.length > 0 && toggleExpanded(gift.id)}>
+                        <TableCell>
+                          {gift.image_url ? (
+                            <img
+                              src={gift.image_url}
+                              alt={gift.name}
+                              className="w-12 h-12 object-cover rounded"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
+                              <Image className="w-5 h-5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">{gift.name}</TableCell>
+                        <TableCell>{formatCurrency(Number(gift.price))}</TableCell>
+                        <TableCell>{gift.category || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{purchaseCount}/{limit}</span>
+                            {giftPurchases.length > 0 && (
+                              <Users className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {isSoldOut ? (
+                            <Badge className="bg-success">
+                              <Check className="w-3 h-3 mr-1" />
+                              Esgotado
+                            </Badge>
+                          ) : purchaseCount > 0 ? (
+                            <Badge variant="secondary" className="bg-gold/20 text-gold-dark">
+                              Vendendo
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Disponível</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(gift)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(gift.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      <CollapsibleContent asChild>
+                        <TableRow className="bg-muted/50">
+                          <TableCell colSpan={7} className="p-4">
+                            <div className="space-y-2">
+                              <p className="font-medium text-sm">Compradores:</p>
+                              <div className="grid gap-2">
+                                {giftPurchases.map((purchase) => (
+                                  <div key={purchase.id} className="flex items-center justify-between text-sm bg-background p-2 rounded">
+                                    <div>
+                                      <span className="font-medium">{purchase.purchaser_name}</span>
+                                      {purchase.purchaser_email && (
+                                        <span className="text-muted-foreground ml-2">({purchase.purchaser_email})</span>
+                                      )}
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-medium text-gold">{formatCurrency(Number(purchase.amount))}</span>
+                                      <span className="text-muted-foreground text-xs ml-2">
+                                        {new Date(purchase.purchased_at).toLocaleDateString("pt-BR")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      </CollapsibleContent>
+                    </>
+                  </Collapsible>
+                );
+              })}
               {(!gifts || gifts.length === 0) && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
@@ -313,13 +391,24 @@ const AdminPresentes = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Categoria</Label>
+                <Label>Limite de vendas</Label>
                 <Input
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="Cozinha, Casa, etc."
+                  type="number"
+                  min="1"
+                  value={purchaseLimit}
+                  onChange={(e) => setPurchaseLimit(e.target.value)}
+                  placeholder={String(globalLimit)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categoria</Label>
+              <Input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="Cozinha, Casa, etc."
+              />
             </div>
 
             <div className="space-y-2">
