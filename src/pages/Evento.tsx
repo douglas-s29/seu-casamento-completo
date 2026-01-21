@@ -55,12 +55,12 @@ const Evento = () => {
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <div className="max-w-xl mx-auto">
             {/* Cerimônia */}
             <Card className="elegant-shadow">
               <CardHeader className="text-center pb-4">
-                <div className="w-16 h-16 rounded-full bg-champagne flex items-center justify-center mx-auto mb-4">
-                  <MapPin className="w-8 h-8 text-gold" />
+                <div className="w-16 h-16 rounded-full bg-sage-light flex items-center justify-center mx-auto mb-4">
+                  <MapPin className="w-8 h-8 text-primary" />
                 </div>
                 <CardTitle className="font-serif text-2xl">Cerimônia</CardTitle>
               </CardHeader>
@@ -85,41 +85,6 @@ const Evento = () => {
                   </>
                 ) : (
                   <p className="text-muted-foreground italic">Local a definir</p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Recepção */}
-            <Card className="elegant-shadow">
-              <CardHeader className="text-center pb-4">
-                <div className="w-16 h-16 rounded-full bg-champagne flex items-center justify-center mx-auto mb-4">
-                  <Clock className="w-8 h-8 text-gold" />
-                </div>
-                <CardTitle className="font-serif text-2xl">Recepção</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center space-y-4">
-                {settings?.reception_location ? (
-                  <>
-                    <p className="font-medium text-lg">{settings.reception_location}</p>
-                    {settings.reception_address && (
-                      <p className="text-muted-foreground">{settings.reception_address}</p>
-                    )}
-                    {settings.reception_address && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openInMaps(settings.reception_address)}
-                        className="mt-4"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        Ver no mapa
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-muted-foreground italic">
-                    {settings?.ceremony_location ? "Mesmo local da cerimônia" : "Local a definir"}
-                  </p>
                 )}
               </CardContent>
             </Card>
