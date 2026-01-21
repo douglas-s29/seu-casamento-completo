@@ -58,7 +58,11 @@ export default {
         },
         champagne: "hsl(var(--champagne))",
         blush: "hsl(var(--blush))",
-        sage: "hsl(var(--sage))",
+        sage: {
+          DEFAULT: "hsl(var(--sage))",
+          dark: "hsl(var(--sage-dark))",
+          light: "hsl(var(--sage-light))",
+        },
         success: "hsl(var(--success))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
