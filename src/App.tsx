@@ -8,6 +8,7 @@ import Evento from "./pages/Evento";
 import Presentes from "./pages/Presentes";
 import Confirmar from "./pages/Confirmar";
 import Recados from "./pages/Recados";
+import Agradecimento from "./pages/Agradecimento";
 import Auth from "./pages/Auth";
 import AdminLayout from "./pages/admin/AdminLayout";
 import Dashboard from "./pages/admin/Dashboard";
@@ -31,6 +32,7 @@ const App = () => (
           <Route path="/presentes" element={<Presentes />} />
           <Route path="/confirmar" element={<Confirmar />} />
           <Route path="/recados" element={<Recados />} />
+          <Route path="/agradecimento" element={<Agradecimento />} />
           <Route path="/admin" element={<Auth />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route path="dashboard" element={<Dashboard />} />

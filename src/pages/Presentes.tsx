@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
-import { useGifts, usePurchaseGift } from "@/hooks/useGifts";
+import { useGifts } from "@/hooks/useGifts";
+import { useAddGiftPurchase } from "@/hooks/useGiftPurchases";
 import { useWeddingSettings } from "@/hooks/useWeddingSettings";
-import { Gift, Check, Copy, X, CreditCard, QrCode, Loader2 } from "lucide-react";
+import { Gift, Check, Copy, CreditCard, QrCode, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { Progress } from "@/components/ui/progress";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD" | null;
 
@@ -21,9 +24,10 @@ interface PixPaymentResult {
 }
 
 const Presentes = () => {
+  const navigate = useNavigate();
   const { data: gifts, isLoading } = useGifts();
   const { data: settings } = useWeddingSettings();
-  const purchaseGift = usePurchaseGift();
+  const addPurchase = useAddGiftPurchase();
   const { toast } = useToast();
 
   const [selectedGift, setSelectedGift] = useState<typeof gifts[0] | null>(null);
@@ -32,7 +36,6 @@ const Presentes = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pixResult, setPixResult] = useState<PixPaymentResult | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   // Credit card fields
   const [cardNumber, setCardNumber] = useState("");
@@ -54,6 +57,16 @@ const Presentes = () => {
       return;
     }
     setPaymentMethod(method);
+  };
+
+  const goToThankYou = (giftName: string, amount: number) => {
+    navigate("/agradecimento", {
+      state: {
+        purchaserName: purchaserName.trim(),
+        giftName,
+        amount,
+      },
+    });
   };
 
   const handlePixPayment = async () => {
@@ -81,11 +94,12 @@ const Presentes = () => {
           expirationDate: data.expirationDate,
         });
 
-        // Mark as purchased
-        await purchaseGift.mutateAsync({
-          id: selectedGift.id,
+        // Record the purchase
+        await addPurchase.mutateAsync({
+          giftId: selectedGift.id,
           purchaserName: purchaserName.trim(),
           purchaserEmail: purchaserEmail.trim() || undefined,
+          amount: Number(selectedGift.price),
         });
       } else {
         throw new Error(data.error || "Erro ao gerar PIX");
@@ -106,7 +120,6 @@ const Presentes = () => {
   const handleCardPayment = async () => {
     if (!selectedGift) return;
 
-    // Basic validation
     if (!cardNumber || !cardName || !cardExpiry || !cardCvv || !cpf || !postalCode || !addressNumber || !phone) {
       toast({
         title: "Erro",
@@ -157,31 +170,33 @@ const Presentes = () => {
       if (error) throw error;
 
       if (data.success && (data.status === "CONFIRMED" || data.status === "RECEIVED")) {
-        // Mark as purchased
-        await purchaseGift.mutateAsync({
-          id: selectedGift.id,
+        await addPurchase.mutateAsync({
+          giftId: selectedGift.id,
           purchaserName: purchaserName.trim(),
           purchaserEmail: purchaserEmail.trim() || undefined,
+          amount: Number(selectedGift.price),
         });
 
-        setShowSuccess(true);
         toast({
           title: "Pagamento confirmado!",
           description: "Obrigado pelo presente!",
         });
+        
+        goToThankYou(selectedGift.name, Number(selectedGift.price));
       } else if (data.status === "PENDING") {
-        // Mark as purchased even if pending (will be confirmed by webhook later)
-        await purchaseGift.mutateAsync({
-          id: selectedGift.id,
+        await addPurchase.mutateAsync({
+          giftId: selectedGift.id,
           purchaserName: purchaserName.trim(),
           purchaserEmail: purchaserEmail.trim() || undefined,
+          amount: Number(selectedGift.price),
         });
         
-        setShowSuccess(true);
         toast({
           title: "Pagamento em processamento",
           description: "Seu pagamento está sendo processado.",
         });
+        
+        goToThankYou(selectedGift.name, Number(selectedGift.price));
       } else {
         throw new Error(data.error || "Pagamento não autorizado");
       }
@@ -194,6 +209,12 @@ const Presentes = () => {
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handlePixSuccess = () => {
+    if (selectedGift) {
+      goToThankYou(selectedGift.name, Number(selectedGift.price));
     }
   };
 
@@ -211,7 +232,6 @@ const Presentes = () => {
     setPurchaserEmail("");
     setPaymentMethod(null);
     setPixResult(null);
-    setShowSuccess(false);
     setCardNumber("");
     setCardName("");
     setCardExpiry("");
@@ -262,8 +282,18 @@ const Presentes = () => {
     return numbers.replace(/(\d{5})(\d)/, "$1-$2");
   };
 
-  const availableGifts = gifts?.filter((g) => !g.purchased) || [];
-  const purchasedGifts = gifts?.filter((g) => g.purchased) || [];
+  // Filter gifts based on purchase count
+  const availableGifts = gifts?.filter((g) => {
+    const purchaseCount = (g as any).purchase_count || 0;
+    const limit = (g as any).purchase_limit || 1;
+    return purchaseCount < limit;
+  }) || [];
+  
+  const soldOutGifts = gifts?.filter((g) => {
+    const purchaseCount = (g as any).purchase_count || 0;
+    const limit = (g as any).purchase_limit || 1;
+    return purchaseCount >= limit;
+  }) || [];
 
   return (
     <Layout>
@@ -284,7 +314,7 @@ const Presentes = () => {
             <div className="text-center py-12">
               <p className="text-muted-foreground">Carregando presentes...</p>
             </div>
-          ) : availableGifts.length === 0 && purchasedGifts.length === 0 ? (
+          ) : availableGifts.length === 0 && soldOutGifts.length === 0 ? (
             <div className="text-center py-12">
               <Gift className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground text-lg">
@@ -300,67 +330,82 @@ const Presentes = () => {
                     Presentes Disponíveis ({availableGifts.length})
                   </h2>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {availableGifts.map((gift) => (
-                      <Card key={gift.id} className="elegant-shadow hover:shadow-lg transition-shadow">
-                        {gift.image_url && (
-                          <div className="aspect-square bg-muted rounded-t-lg overflow-hidden">
-                            <img
-                              src={gift.image_url}
-                              alt={gift.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
-                        <CardHeader className="pb-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <CardTitle className="font-serif text-lg leading-tight">
-                              {gift.name}
-                            </CardTitle>
-                            {gift.category && (
-                              <Badge variant="secondary" className="text-xs shrink-0">
-                                {gift.category}
-                              </Badge>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent className="pb-2">
-                          {gift.description && (
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {gift.description}
-                            </p>
+                    {availableGifts.map((gift) => {
+                      const purchaseCount = (gift as any).purchase_count || 0;
+                      const limit = (gift as any).purchase_limit || 1;
+                      const progress = (purchaseCount / limit) * 100;
+                      
+                      return (
+                        <Card key={gift.id} className="elegant-shadow hover:shadow-lg transition-shadow">
+                          {gift.image_url && (
+                            <div className="aspect-square bg-muted rounded-t-lg overflow-hidden">
+                              <img
+                                src={gift.image_url}
+                                alt={gift.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                           )}
-                          <p className="font-serif text-2xl text-gold">
-                            {formatPrice(Number(gift.price))}
-                          </p>
-                        </CardContent>
-                        <CardFooter>
-                          <Button
-                            onClick={() => setSelectedGift(gift)}
-                            className="w-full bg-gold hover:bg-gold-dark text-primary-foreground"
-                          >
-                            <Gift className="w-4 h-4 mr-2" />
-                            Presentear
-                          </Button>
-                        </CardFooter>
-                      </Card>
-                    ))}
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <CardTitle className="font-serif text-lg leading-tight">
+                                {gift.name}
+                              </CardTitle>
+                              {gift.category && (
+                                <Badge variant="secondary" className="text-xs shrink-0">
+                                  {gift.category}
+                                </Badge>
+                              )}
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pb-2">
+                            {gift.description && (
+                              <p className="text-sm text-muted-foreground mb-2">
+                                {gift.description}
+                              </p>
+                            )}
+                            <p className="font-serif text-2xl text-gold">
+                              {formatPrice(Number(gift.price))}
+                            </p>
+                            {limit > 1 && (
+                              <div className="mt-3 space-y-1">
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>{purchaseCount} de {limit} vendidos</span>
+                                  <span>{limit - purchaseCount} restantes</span>
+                                </div>
+                                <Progress value={progress} className="h-1.5" />
+                              </div>
+                            )}
+                          </CardContent>
+                          <CardFooter>
+                            <Button
+                              onClick={() => setSelectedGift(gift)}
+                              className="w-full bg-gold hover:bg-gold-dark text-primary-foreground"
+                            >
+                              <Gift className="w-4 h-4 mr-2" />
+                              Presentear
+                            </Button>
+                          </CardFooter>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Purchased Gifts */}
-              {purchasedGifts.length > 0 && (
+              {/* Sold Out Gifts */}
+              {soldOutGifts.length > 0 && (
                 <div>
                   <h2 className="font-serif text-2xl mb-8 text-center text-muted-foreground">
-                    Presentes já escolhidos ({purchasedGifts.length})
+                    Presentes já escolhidos ({soldOutGifts.length})
                   </h2>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 opacity-60">
-                    {purchasedGifts.map((gift) => (
+                    {soldOutGifts.map((gift) => (
                       <Card key={gift.id} className="relative">
                         <div className="absolute inset-0 bg-background/60 rounded-lg z-10 flex items-center justify-center">
                           <div className="text-center">
                             <Check className="w-12 h-12 text-success mx-auto mb-2" />
-                            <p className="font-medium text-success">Já presenteado</p>
+                            <p className="font-medium text-success">Esgotado</p>
                           </div>
                         </div>
                         {gift.image_url && (
@@ -390,8 +435,8 @@ const Presentes = () => {
         </div>
       </div>
 
-      {/* Main Purchase Dialog - Step 1: Name/Email and Payment Method */}
-      <Dialog open={!!selectedGift && !paymentMethod && !showSuccess} onOpenChange={() => closeDialog()}>
+      {/* Main Purchase Dialog */}
+      <Dialog open={!!selectedGift && !paymentMethod} onOpenChange={() => closeDialog()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-serif text-2xl">
@@ -530,16 +575,22 @@ const Presentes = () => {
               Após o pagamento, o presente será marcado como presenteado.
             </p>
           </div>
-          <DialogFooter>
-            <Button onClick={closeDialog} className="w-full bg-gold hover:bg-gold-dark text-primary-foreground">
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={closeDialog} className="w-full sm:w-auto">
               Fechar
+            </Button>
+            <Button 
+              onClick={handlePixSuccess} 
+              className="w-full sm:w-auto bg-gold hover:bg-gold-dark text-primary-foreground"
+            >
+              Já paguei!
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Credit Card Payment Dialog */}
-      <Dialog open={paymentMethod === "CREDIT_CARD" && !showSuccess} onOpenChange={() => setPaymentMethod(null)}>
+      <Dialog open={paymentMethod === "CREDIT_CARD"} onOpenChange={() => setPaymentMethod(null)}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-serif text-2xl">
@@ -649,28 +700,6 @@ const Presentes = () => {
               ) : (
                 "Pagar"
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Success Dialog */}
-      <Dialog open={showSuccess} onOpenChange={() => closeDialog()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-2xl text-center">
-              <Check className="w-16 h-16 text-success mx-auto mb-4" />
-              Obrigado, {purchaserName}!
-            </DialogTitle>
-            <DialogDescription className="text-center text-lg">
-              Seu presente foi registrado com sucesso!
-              <br />
-              <strong>{selectedGift?.name}</strong>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={closeDialog} className="w-full bg-gold hover:bg-gold-dark text-primary-foreground">
-              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
