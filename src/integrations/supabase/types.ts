@@ -59,8 +59,41 @@ export type Database = {
         }
         Relationships: []
       }
+      guest_companions: {
+        Row: {
+          age: number | null
+          created_at: string
+          guest_id: string
+          id: string
+          name: string
+        }
+        Insert: {
+          age?: number | null
+          created_at?: string
+          guest_id: string
+          id?: string
+          name: string
+        }
+        Update: {
+          age?: number | null
+          created_at?: string
+          guest_id?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_companions_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guests: {
         Row: {
+          age: number | null
           companions: number
           created_at: string
           email: string | null
@@ -73,6 +106,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          age?: number | null
           companions?: number
           created_at?: string
           email?: string | null
@@ -85,6 +119,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          age?: number | null
           companions?: number
           created_at?: string
           email?: string | null

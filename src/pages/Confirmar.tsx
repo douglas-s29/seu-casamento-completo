@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
-import { useAddGuest } from "@/hooks/useGuests";
-import { Check, X, Users, MessageCircle, User, Mail, Phone } from "lucide-react";
+import { Check, X, Users, MessageCircle, User, Mail, Phone, Plus, Trash2, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,22 +8,51 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+interface Companion {
+  id: string;
+  name: string;
+  age: string;
+}
 
 const Confirmar = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [age, setAge] = useState("");
   const [rsvpStatus, setRsvpStatus] = useState<"confirmed" | "declined">("confirmed");
-  const [companions, setCompanions] = useState("0");
+  const [companions, setCompanions] = useState<Companion[]>([]);
   const [message, setMessage] = useState("");
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const addGuestMutation = useAddGuest();
   const { toast } = useToast();
+
+  const addCompanion = () => {
+    setCompanions([...companions, { id: crypto.randomUUID(), name: "", age: "" }]);
+  };
+
+  const removeCompanion = (id: string) => {
+    setCompanions(companions.filter((c) => c.id !== id));
+  };
+
+  const updateCompanion = (id: string, field: "name" | "age", value: string) => {
+    setCompanions(
+      companions.map((c) => (c.id === id ? { ...c, [field]: value } : c))
+    );
+  };
+
+  const formatPhone = (value: string) => {
+    const numbers = value.replace(/\D/g, "").slice(0, 11);
+    return numbers
+      .replace(/(\d{2})(\d)/, "($1) $2")
+      .replace(/(\d{5})(\d)/, "$1-$2");
+  };
 
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       toast({
         title: "Nome obrigatório",
@@ -43,29 +71,63 @@ const Confirmar = () => {
       return;
     }
 
+    // Validate companions have names
+    const validCompanions = companions.filter((c) => c.name.trim());
+    
+    setIsSubmitting(true);
+
     try {
-      await addGuestMutation.mutateAsync({
-        name: name.trim(),
-        email: email.trim() || null,
-        phone: phone.trim() || null,
-        rsvp_status: rsvpStatus,
-        companions: parseInt(companions) || 0,
-        message: message.trim() || null,
-      });
+      // Insert guest
+      const { data: guestData, error: guestError } = await supabase
+        .from("guests")
+        .insert({
+          name: name.trim(),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          age: age ? parseInt(age) : null,
+          rsvp_status: rsvpStatus,
+          companions: validCompanions.length,
+          message: message.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (guestError) throw guestError;
+
+      // Insert companions if any
+      if (validCompanions.length > 0 && guestData) {
+        const companionInserts = validCompanions.map((c) => ({
+          guest_id: guestData.id,
+          name: c.name.trim(),
+          age: c.age ? parseInt(c.age) : null,
+        }));
+
+        const { error: companionError } = await supabase
+          .from("guest_companions")
+          .insert(companionInserts);
+
+        if (companionError) {
+          console.error("Error inserting companions:", companionError);
+        }
+      }
 
       setIsConfirmed(true);
       toast({
         title: rsvpStatus === "confirmed" ? "Presença confirmada!" : "Resposta registrada!",
-        description: rsvpStatus === "confirmed" 
-          ? "Obrigado por confirmar. Esperamos você!" 
-          : "Obrigado por nos informar. Sentiremos sua falta!",
+        description:
+          rsvpStatus === "confirmed"
+            ? "Obrigado por confirmar. Esperamos você!"
+            : "Obrigado por nos informar. Sentiremos sua falta!",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Error confirming:", error);
       toast({
         title: "Erro ao confirmar",
         description: "Ocorreu um erro. Por favor, tente novamente.",
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -139,8 +201,9 @@ const Confirmar = () => {
                     id="phone"
                     type="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhone(e.target.value))}
                     placeholder="(00) 00000-0000"
+                    maxLength={15}
                   />
                 </div>
 
@@ -155,6 +218,22 @@ const Confirmar = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="seu@email.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="age" className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Idade
+                  </Label>
+                  <Input
+                    id="age"
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={age}
+                    onChange={(e) => setAge(e.target.value)}
+                    placeholder="Sua idade"
                   />
                 </div>
 
@@ -197,22 +276,76 @@ const Confirmar = () => {
                 </div>
 
                 {rsvpStatus === "confirmed" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="companions" className="flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Número de acompanhantes
-                    </Label>
-                    <Input
-                      id="companions"
-                      type="number"
-                      min="0"
-                      max="10"
-                      value={companions}
-                      onChange={(e) => setCompanions(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Não inclua você mesmo neste número
-                    </p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Acompanhantes
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addCompanion}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Adicionar
+                      </Button>
+                    </div>
+
+                    {companions.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        Nenhum acompanhante adicionado
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {companions.map((companion, index) => (
+                          <div
+                            key={companion.id}
+                            className="flex gap-2 items-start p-3 bg-muted/50 rounded-lg"
+                          >
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-muted-foreground w-6">
+                                  {index + 1}.
+                                </span>
+                                <Input
+                                  value={companion.name}
+                                  onChange={(e) =>
+                                    updateCompanion(companion.id, "name", e.target.value)
+                                  }
+                                  placeholder="Nome do acompanhante"
+                                  className="flex-1"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2 ml-6">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="120"
+                                  value={companion.age}
+                                  onChange={(e) =>
+                                    updateCompanion(companion.id, "age", e.target.value)
+                                  }
+                                  placeholder="Idade"
+                                  className="w-24"
+                                />
+                                <span className="text-xs text-muted-foreground">anos</span>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeCompanion(companion.id)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -232,10 +365,10 @@ const Confirmar = () => {
 
                 <Button
                   type="submit"
-                  disabled={addGuestMutation.isPending}
+                  disabled={isSubmitting}
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
-                  {addGuestMutation.isPending ? "Confirmando..." : "Confirmar Presença"}
+                  {isSubmitting ? "Confirmando..." : "Confirmar Presença"}
                 </Button>
               </form>
             </CardContent>
