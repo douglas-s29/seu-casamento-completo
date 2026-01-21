@@ -1,7 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Heart, Gift, MessageCircle, MapPin, LogIn } from "lucide-react";
+import { Menu, X, Heart, Gift, MessageCircle, MapPin } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -40,12 +39,6 @@ export function Navigation() {
                 {item.label}
               </Link>
             ))}
-            <Link to="/admin">
-              <Button variant="outline" size="sm" className="ml-2">
-                <LogIn className="w-4 h-4 mr-2" />
-                Admin
-              </Button>
-            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -77,14 +70,6 @@ export function Navigation() {
                   {item.label}
                 </Link>
               ))}
-              <Link
-                to="/admin"
-                onClick={() => setIsOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50"
-              >
-                <LogIn className="w-5 h-5" />
-                Área Admin
-              </Link>
             </div>
           </div>
         )}
