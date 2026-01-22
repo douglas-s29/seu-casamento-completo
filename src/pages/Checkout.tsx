@@ -78,6 +78,15 @@ const Checkout = () => {
       return;
     }
 
+    if (!cpf.trim()) {
+      toast({
+        title: "Erro",
+        description: "Por favor, informe seu CPF.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (paymentMethod === "CREDIT_CARD") {
       if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !cpf || !postalCode || !addressNumber || !email) {
         toast({
@@ -111,6 +120,7 @@ const Checkout = () => {
             customerName: name.trim(),
             customerEmail: email.trim() || undefined,
             customerPhone: phone.replace(/\D/g, ""),
+            customerTaxId: cpf.replace(/\D/g, ""),
             returnUrl,
             completionUrl,
           },
@@ -335,6 +345,15 @@ const Checkout = () => {
                         placeholder="(00) 00000-0000"
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cpfGeneral">CPF *</Label>
+                    <Input
+                      id="cpfGeneral"
+                      value={cpf}
+                      onChange={(e) => setCpf(e.target.value)}
+                      placeholder="000.000.000-00"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">E-mail {paymentMethod === "CREDIT_CARD" ? "*" : "(opcional)"}</Label>
