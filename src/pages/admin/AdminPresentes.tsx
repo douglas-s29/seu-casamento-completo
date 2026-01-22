@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useGifts, useAddGift, useUpdateGift, useDeleteGift } from "@/hooks/useGifts";
+import { useGiftsAdmin, useAddGift, useUpdateGift, useDeleteGift, Gift } from "@/hooks/useGifts";
 import { useGiftPurchases } from "@/hooks/useGiftPurchases";
-import { useWeddingSettings } from "@/hooks/useWeddingSettings";
+import { useWeddingSettingsAdmin } from "@/hooks/useWeddingSettings";
 import { Plus, Trash2, Check, Pencil, X, Image, Users, Clock, RefreshCcw, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,14 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { Gift } from "@/hooks/useGifts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const AdminPresentes = () => {
-  const { data: gifts } = useGifts();
+  const { data: gifts } = useGiftsAdmin();
   const { data: purchases } = useGiftPurchases();
-  const { data: settings } = useWeddingSettings();
+  const { data: settings } = useWeddingSettingsAdmin();
   const addGift = useAddGift();
   const updateGift = useUpdateGift();
   const deleteGift = useDeleteGift();

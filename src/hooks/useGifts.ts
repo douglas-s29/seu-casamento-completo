@@ -6,9 +6,47 @@ export type Gift = Tables<"gifts">;
 export type GiftInsert = TablesInsert<"gifts">;
 export type GiftUpdate = TablesUpdate<"gifts">;
 
+// Public gift type (without sensitive purchaser info)
+export type GiftPublic = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  category: string | null;
+  purchase_count: number;
+  purchase_limit: number;
+  purchased: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Public hook - uses gifts_public view (no sensitive data)
+ * Use this for guest-facing pages like /presentes
+ */
 export function useGifts() {
   return useQuery({
-    queryKey: ["gifts"],
+    queryKey: ["gifts_public"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("gifts_public")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data as GiftPublic[];
+    },
+  });
+}
+
+/**
+ * Admin hook - uses gifts table directly (full data including purchaser info)
+ * Use this only in admin pages
+ */
+export function useGiftsAdmin() {
+  return useQuery({
+    queryKey: ["gifts_admin"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("gifts")
@@ -36,7 +74,8 @@ export function useAddGift() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gifts"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_admin"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_public"] });
     },
   });
 }
@@ -57,7 +96,8 @@ export function useUpdateGift() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gifts"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_admin"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_public"] });
     },
   });
 }
@@ -75,7 +115,8 @@ export function useDeleteGift() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gifts"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_admin"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_public"] });
     },
   });
 }
@@ -110,7 +151,8 @@ export function usePurchaseGift() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gifts"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_admin"] });
+      queryClient.invalidateQueries({ queryKey: ["gifts_public"] });
     },
   });
 }

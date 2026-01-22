@@ -56,6 +56,13 @@ export type Database = {
             referencedRelation: "gifts"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "gift_purchases_gift_id_fkey"
+            columns: ["gift_id"]
+            isOneToOne: false
+            referencedRelation: "gifts_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       gifts: {
@@ -299,7 +306,105 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      gifts_public: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          description: string | null
+          id: string | null
+          image_url: string | null
+          name: string | null
+          price: number | null
+          purchase_count: number | null
+          purchase_limit: number | null
+          purchased: boolean | null
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          image_url?: string | null
+          name?: string | null
+          price?: number | null
+          purchase_count?: number | null
+          purchase_limit?: number | null
+          purchased?: boolean | null
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          image_url?: string | null
+          name?: string | null
+          price?: number | null
+          purchase_count?: number | null
+          purchase_limit?: number | null
+          purchased?: boolean | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      wedding_settings_public: {
+        Row: {
+          background_image_url: string | null
+          bride_name: string | null
+          ceremony_address: string | null
+          ceremony_location: string | null
+          ceremony_map_url: string | null
+          created_at: string | null
+          dress_code: string | null
+          gift_purchase_limit: number | null
+          groom_name: string | null
+          id: string | null
+          reception_address: string | null
+          reception_location: string | null
+          reception_map_url: string | null
+          story_text: string | null
+          updated_at: string | null
+          wedding_date: string | null
+        }
+        Insert: {
+          background_image_url?: string | null
+          bride_name?: string | null
+          ceremony_address?: string | null
+          ceremony_location?: string | null
+          ceremony_map_url?: string | null
+          created_at?: string | null
+          dress_code?: string | null
+          gift_purchase_limit?: number | null
+          groom_name?: string | null
+          id?: string | null
+          reception_address?: string | null
+          reception_location?: string | null
+          reception_map_url?: string | null
+          story_text?: string | null
+          updated_at?: string | null
+          wedding_date?: string | null
+        }
+        Update: {
+          background_image_url?: string | null
+          bride_name?: string | null
+          ceremony_address?: string | null
+          ceremony_location?: string | null
+          ceremony_map_url?: string | null
+          created_at?: string | null
+          dress_code?: string | null
+          gift_purchase_limit?: number | null
+          groom_name?: string | null
+          id?: string | null
+          reception_address?: string | null
+          reception_location?: string | null
+          reception_map_url?: string | null
+          story_text?: string | null
+          updated_at?: string | null
+          wedding_date?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       decrement_gift_purchase_count: {
