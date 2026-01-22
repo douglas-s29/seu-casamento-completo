@@ -82,13 +82,18 @@ const Presentes = () => {
         if (error) throw error;
 
         if (data.success && data.paymentUrl) {
+          // Record the purchase with PENDING status (will be confirmed via webhook)
           await addPurchase.mutateAsync({
             giftId: selectedGift.id,
             purchaserName: purchaserName.trim(),
             purchaserEmail: purchaserEmail.trim() || undefined,
             amount: Number(selectedGift.price),
+            paymentStatus: "pending",
+            externalPaymentId: data.billingId,
+            paymentGateway: "abacatepay",
           });
 
+          // Redirect to AbacatePay payment page
           window.location.href = data.paymentUrl;
         } else {
           throw new Error(data.error || "Erro ao criar cobrança");
@@ -126,16 +131,20 @@ const Presentes = () => {
         if (error) throw error;
 
         if (data.success) {
+          // Record the purchase with PENDING status (will be confirmed via webhook)
           await addPurchase.mutateAsync({
             giftId: selectedGift.id,
             purchaserName: purchaserName.trim(),
             purchaserEmail: purchaserEmail.trim() || undefined,
             amount: Number(selectedGift.price),
+            paymentStatus: "pending",
+            externalPaymentId: data.paymentId,
+            paymentGateway: "asaas",
           });
 
           toast({
-            title: "Pagamento aprovado!",
-            description: "Obrigado pelo presente!",
+            title: "Pagamento em processamento",
+            description: "Você será notificado quando o pagamento for confirmado.",
           });
           
           window.location.href = completionUrl;

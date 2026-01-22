@@ -299,12 +299,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      decrement_gift_purchase_count: {
+        Args: { gift_id_param: string }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_gift_purchase_count: {
+        Args: { gift_id_param: string }
+        Returns: undefined
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
