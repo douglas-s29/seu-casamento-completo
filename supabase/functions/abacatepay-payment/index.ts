@@ -40,10 +40,10 @@ Deno.serve(async (req) => {
     // Valor em centavos
     const amountInCents = Math.round(body.value * 100);
 
-    // Criar cobrança no AbacatePay (PIX + Boleto disponíveis)
+    // Criar cobrança no AbacatePay (apenas PIX disponível)
     const billingPayload = {
       frequency: "ONE_TIME",
-      methods: ["PIX", "BOLETO"],
+      methods: ["PIX"],
       products: [
         {
           externalId: body.giftId,
