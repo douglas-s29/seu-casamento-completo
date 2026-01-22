@@ -52,8 +52,8 @@ export const validateCPF = (cpf: string): boolean => {
 };
 
 export const validateCheckoutForm = (data: CheckoutFormData): ValidationResult => {
-  if (!data.name.trim() || data.name.length < 3) {
-    return { valid: false, error: "Nome deve ter pelo menos 3 caracteres" };
+  if (!data.name.trim() || data.name.trim().length < 3) {
+    return { valid: false, error: "Nome completo deve ter pelo menos 3 caracteres" };
   }
   
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
