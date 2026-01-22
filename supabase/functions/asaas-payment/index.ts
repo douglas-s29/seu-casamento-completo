@@ -29,7 +29,7 @@ interface PaymentRequest {
   };
 }
 
-const findCustomerByEmail = async (email: string, baseUrl: string, apiKey: string): Promise<any> => {
+const findCustomerByEmail = async (email: string, baseUrl: string, apiKey: string): Promise<{ id: string } | undefined> => {
   const response = await fetch(
     `${baseUrl}/customers?email=${encodeURIComponent(email)}`,
     {
@@ -136,6 +136,7 @@ Deno.serve(async (req) => {
 
     // Handle customer already exists case
     if (!customerId && customerData.errors) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const alreadyExistsError = customerData.errors.find((e: any) => 
         e.code === "customer_already_exists" || e.description?.includes("já cadastrado")
       );
@@ -149,6 +150,7 @@ Deno.serve(async (req) => {
       }
       
       if (!customerId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const errorMessages = customerData.errors.map((e: any) => e.description).join(", ");
         console.error("Asaas customer creation failed:", customerData.errors);
         
@@ -202,6 +204,7 @@ Deno.serve(async (req) => {
     console.log("Payment response:", sanitizeForLog(paymentData));
 
     if (paymentData.errors) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const errorMessages = paymentData.errors.map((e: any) => e.description).join(", ");
       console.error("Asaas payment error:", paymentData.errors);
       return new Response(

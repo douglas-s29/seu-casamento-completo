@@ -8,6 +8,7 @@ const SENSITIVE_FIELDS = [
   'taxId', 'cpfCnpj', 'holderName', 'expiryMonth', 'expiryYear'
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const sanitizeForLog = (obj: any): any => {
   if (obj === null || obj === undefined) {
     return obj;
@@ -21,6 +22,7 @@ export const sanitizeForLog = (obj: any): any => {
     return obj.map(item => sanitizeForLog(item));
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sanitized: any = {};
   
   for (const key in obj) {
