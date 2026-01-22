@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,7 +7,18 @@ import { Heart, Gift, Home } from "lucide-react";
 const Agradecimento = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { purchaserName, giftName, amount } = location.state || {};
+  const [searchParams] = useSearchParams();
+  
+  // Support both state (old flow) and query params (AbacatePay redirect)
+  const state = location.state as {
+    purchaserName?: string;
+    giftName?: string;
+    amount?: number;
+  } | null;
+
+  const purchaserName = state?.purchaserName || searchParams.get("name") || "";
+  const giftName = state?.giftName || searchParams.get("gift") || "";
+  const amount = state?.amount || Number(searchParams.get("amount")) || 0;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -41,7 +52,7 @@ const Agradecimento = () => {
                     <Gift className="w-5 h-5" />
                     <span className="font-medium">{giftName}</span>
                   </div>
-                  {amount && (
+                  {amount > 0 && (
                     <p className="text-2xl font-serif text-gold">
                       {formatCurrency(amount)}
                     </p>
