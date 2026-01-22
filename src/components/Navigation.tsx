@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Menu, X, Heart, Gift, MessageCircle, MapPin } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { CartButton } from "./CartButton";
 
 const navItems = [
   { path: "/", label: "Início", icon: Heart },
@@ -39,15 +40,21 @@ export function Navigation() {
                 {item.label}
               </Link>
             ))}
+            <div className="ml-2">
+              <CartButton />
+            </div>
           </div>
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden p-2 text-foreground"
-          >
-            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {/* Mobile Menu Button & Cart */}
+          <div className="md:hidden flex items-center gap-2">
+            <CartButton />
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="p-2 text-foreground"
+            >
+              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Navigation */}
