@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useGifts } from "@/hooks/useGifts";
 import { useAddGiftPurchase } from "@/hooks/useGiftPurchases";
-import { Gift, Check, Loader2 } from "lucide-react";
+import { Gift, Check, Loader2, CreditCard, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
+type PaymentMethod = "PIX_BOLETO" | "CREDIT_CARD";
 
 const Presentes = () => {
   const { data: gifts, isLoading } = useGifts();
@@ -21,7 +24,18 @@ const Presentes = () => {
   const [selectedGift, setSelectedGift] = useState<typeof gifts[0] | null>(null);
   const [purchaserName, setPurchaserName] = useState("");
   const [purchaserEmail, setPurchaserEmail] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX_BOLETO");
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Credit card fields for Asaas
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [phone, setPhone] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [addressNumber, setAddressNumber] = useState("");
 
   const handlePayment = async () => {
     if (!selectedGift || !purchaserName.trim()) {
@@ -33,40 +47,101 @@ const Presentes = () => {
       return;
     }
 
+    // Validate credit card fields if paying by card
+    if (paymentMethod === "CREDIT_CARD") {
+      if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !cpf || !phone || !postalCode || !addressNumber || !purchaserEmail) {
+        toast({
+          title: "Erro",
+          description: "Por favor, preencha todos os campos do cartão de crédito.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setIsProcessing(true);
     try {
-      // Get the current URL for return/completion URLs
       const baseUrl = window.location.origin;
       const returnUrl = `${baseUrl}/presentes`;
       const completionUrl = `${baseUrl}/agradecimento?gift=${encodeURIComponent(selectedGift.name)}&name=${encodeURIComponent(purchaserName.trim())}&amount=${selectedGift.price}`;
 
-      const { data, error } = await supabase.functions.invoke("abacatepay-payment", {
-        body: {
-          giftId: selectedGift.id,
-          giftName: selectedGift.name,
-          value: Number(selectedGift.price),
-          customerName: purchaserName.trim(),
-          customerEmail: purchaserEmail.trim() || undefined,
-          returnUrl,
-          completionUrl,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data.success && data.paymentUrl) {
-        // Record the purchase before redirecting
-        await addPurchase.mutateAsync({
-          giftId: selectedGift.id,
-          purchaserName: purchaserName.trim(),
-          purchaserEmail: purchaserEmail.trim() || undefined,
-          amount: Number(selectedGift.price),
+      if (paymentMethod === "PIX_BOLETO") {
+        // Use AbacatePay for PIX/Boleto
+        const { data, error } = await supabase.functions.invoke("abacatepay-payment", {
+          body: {
+            giftId: selectedGift.id,
+            giftName: selectedGift.name,
+            value: Number(selectedGift.price),
+            customerName: purchaserName.trim(),
+            customerEmail: purchaserEmail.trim() || undefined,
+            returnUrl,
+            completionUrl,
+          },
         });
 
-        // Redirect to AbacatePay payment page
-        window.location.href = data.paymentUrl;
+        if (error) throw error;
+
+        if (data.success && data.paymentUrl) {
+          await addPurchase.mutateAsync({
+            giftId: selectedGift.id,
+            purchaserName: purchaserName.trim(),
+            purchaserEmail: purchaserEmail.trim() || undefined,
+            amount: Number(selectedGift.price),
+          });
+
+          window.location.href = data.paymentUrl;
+        } else {
+          throw new Error(data.error || "Erro ao criar cobrança");
+        }
       } else {
-        throw new Error(data.error || "Erro ao criar cobrança");
+        // Use Asaas for Credit Card
+        const [expiryMonth, expiryYear] = cardExpiry.split("/");
+        
+        const { data, error } = await supabase.functions.invoke("asaas-payment", {
+          body: {
+            giftId: selectedGift.id,
+            giftName: selectedGift.name,
+            value: Number(selectedGift.price),
+            customerName: purchaserName.trim(),
+            customerEmail: purchaserEmail.trim(),
+            billingType: "CREDIT_CARD",
+            creditCard: {
+              holderName: cardHolder.trim(),
+              number: cardNumber.replace(/\s/g, ""),
+              expiryMonth: expiryMonth,
+              expiryYear: `20${expiryYear}`,
+              ccv: cardCvv,
+            },
+            creditCardHolderInfo: {
+              name: cardHolder.trim(),
+              email: purchaserEmail.trim(),
+              cpfCnpj: cpf.replace(/\D/g, ""),
+              postalCode: postalCode.replace(/\D/g, ""),
+              addressNumber: addressNumber,
+              phone: phone.replace(/\D/g, ""),
+            },
+          },
+        });
+
+        if (error) throw error;
+
+        if (data.success) {
+          await addPurchase.mutateAsync({
+            giftId: selectedGift.id,
+            purchaserName: purchaserName.trim(),
+            purchaserEmail: purchaserEmail.trim() || undefined,
+            amount: Number(selectedGift.price),
+          });
+
+          toast({
+            title: "Pagamento aprovado!",
+            description: "Obrigado pelo presente!",
+          });
+          
+          window.location.href = completionUrl;
+        } else {
+          throw new Error(data.error || "Erro ao processar pagamento");
+        }
       }
     } catch (error: any) {
       console.error("Payment error:", error);
@@ -84,6 +159,15 @@ const Presentes = () => {
     setSelectedGift(null);
     setPurchaserName("");
     setPurchaserEmail("");
+    setPaymentMethod("PIX_BOLETO");
+    setCardNumber("");
+    setCardHolder("");
+    setCardExpiry("");
+    setCardCvv("");
+    setCpf("");
+    setPhone("");
+    setPostalCode("");
+    setAddressNumber("");
   };
 
   const formatPrice = (price: number) => {
@@ -244,7 +328,7 @@ const Presentes = () => {
 
       {/* Purchase Dialog */}
       <Dialog open={!!selectedGift} onOpenChange={() => closeDialog()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-serif text-2xl">
               Presentear com {selectedGift?.name}
@@ -264,7 +348,7 @@ const Presentes = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Seu e-mail (opcional)</Label>
+              <Label htmlFor="email">Seu e-mail {paymentMethod === "CREDIT_CARD" ? "*" : "(opcional)"}</Label>
               <Input
                 id="email"
                 type="email"
@@ -274,8 +358,133 @@ const Presentes = () => {
               />
             </div>
 
+            {/* Payment Method Selection */}
+            <div className="space-y-3">
+              <Label>Forma de pagamento *</Label>
+              <RadioGroup
+                value={paymentMethod}
+                onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
+                className="grid grid-cols-2 gap-3"
+              >
+                <div>
+                  <RadioGroupItem value="PIX_BOLETO" id="pix_boleto" className="peer sr-only" />
+                  <Label
+                    htmlFor="pix_boleto"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-gold cursor-pointer"
+                  >
+                    <Wallet className="mb-2 h-6 w-6" />
+                    <span className="text-sm font-medium">PIX / Boleto</span>
+                  </Label>
+                </div>
+                <div>
+                  <RadioGroupItem value="CREDIT_CARD" id="credit_card" className="peer sr-only" />
+                  <Label
+                    htmlFor="credit_card"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-gold cursor-pointer"
+                  >
+                    <CreditCard className="mb-2 h-6 w-6" />
+                    <span className="text-sm font-medium">Cartão de Crédito</span>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Credit Card Fields */}
+            {paymentMethod === "CREDIT_CARD" && (
+              <div className="space-y-4 border-t pt-4">
+                <p className="text-sm text-muted-foreground">Dados do cartão de crédito</p>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="cardNumber">Número do cartão *</Label>
+                  <Input
+                    id="cardNumber"
+                    value={cardNumber}
+                    onChange={(e) => setCardNumber(e.target.value)}
+                    placeholder="0000 0000 0000 0000"
+                    maxLength={19}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="cardHolder">Nome no cartão *</Label>
+                  <Input
+                    id="cardHolder"
+                    value={cardHolder}
+                    onChange={(e) => setCardHolder(e.target.value)}
+                    placeholder="NOME COMPLETO"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="cardExpiry">Validade *</Label>
+                    <Input
+                      id="cardExpiry"
+                      value={cardExpiry}
+                      onChange={(e) => setCardExpiry(e.target.value)}
+                      placeholder="MM/AA"
+                      maxLength={5}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cardCvv">CVV *</Label>
+                    <Input
+                      id="cardCvv"
+                      value={cardCvv}
+                      onChange={(e) => setCardCvv(e.target.value)}
+                      placeholder="123"
+                      maxLength={4}
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="cpf">CPF *</Label>
+                  <Input
+                    id="cpf"
+                    value={cpf}
+                    onChange={(e) => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Telefone *</Label>
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="postalCode">CEP *</Label>
+                    <Input
+                      id="postalCode"
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      placeholder="00000-000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="addressNumber">Número *</Label>
+                    <Input
+                      id="addressNumber"
+                      value={addressNumber}
+                      onChange={(e) => setAddressNumber(e.target.value)}
+                      placeholder="123"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <p className="text-sm text-muted-foreground">
-              Você será redirecionado para a página de pagamento (PIX ou Boleto).
+              {paymentMethod === "PIX_BOLETO" 
+                ? "Você será redirecionado para a página de pagamento (PIX ou Boleto)."
+                : "O pagamento será processado de forma segura via Asaas."}
             </p>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -292,8 +501,10 @@ const Presentes = () => {
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Processando...
                 </>
-              ) : (
+              ) : paymentMethod === "PIX_BOLETO" ? (
                 "Continuar para pagamento"
+              ) : (
+                "Pagar com cartão"
               )}
             </Button>
           </DialogFooter>
