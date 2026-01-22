@@ -382,7 +382,7 @@ const Presentes = () => {
                     className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-gold cursor-pointer"
                   >
                     <Wallet className="mb-2 h-6 w-6" />
-                    <span className="text-sm font-medium">PIX / Boleto</span>
+                    <span className="text-sm font-medium">PIX</span>
                   </Label>
                 </div>
                 <div>
@@ -492,7 +492,7 @@ const Presentes = () => {
 
             <p className="text-sm text-muted-foreground">
               {paymentMethod === "PIX_BOLETO" 
-                ? "Você será redirecionado para a página de pagamento (PIX ou Boleto)."
+                ? "Você será redirecionado para a página de pagamento PIX."
                 : "O pagamento será processado de forma segura via Asaas."}
             </p>
           </div>
