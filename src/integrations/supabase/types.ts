@@ -17,24 +17,33 @@ export type Database = {
       gift_purchases: {
         Row: {
           amount: number
+          external_payment_id: string | null
           gift_id: string
           id: string
+          payment_gateway: string | null
+          payment_status: string
           purchased_at: string
           purchaser_email: string | null
           purchaser_name: string
         }
         Insert: {
           amount: number
+          external_payment_id?: string | null
           gift_id: string
           id?: string
+          payment_gateway?: string | null
+          payment_status?: string
           purchased_at?: string
           purchaser_email?: string | null
           purchaser_name: string
         }
         Update: {
           amount?: number
+          external_payment_id?: string | null
           gift_id?: string
           id?: string
+          payment_gateway?: string | null
+          payment_status?: string
           purchased_at?: string
           purchaser_email?: string | null
           purchaser_name?: string
