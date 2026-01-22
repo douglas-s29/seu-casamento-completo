@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     if (!customerId && customerData.errors) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const alreadyExistsError = customerData.errors.find((e: any) => 
-        e.code === "customer_already_exists" || e.description?.includes("já cadastrado")
+        e.code === "customer_already_exists"
       );
       
       if (alreadyExistsError && body.customerEmail) {

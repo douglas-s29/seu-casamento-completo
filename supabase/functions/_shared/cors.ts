@@ -7,7 +7,11 @@ const getAllowedOrigins = (): string[] => {
   const env = Deno.env.get("ENVIRONMENT") || "development";
   if (env === "production") {
     const siteUrl = Deno.env.get("SITE_URL");
-    return siteUrl ? [siteUrl] : ["https://seudominio.com"];
+    if (!siteUrl) {
+      console.error("SITE_URL not configured for production! Using development fallback.");
+      return ["http://localhost:5173"];
+    }
+    return [siteUrl];
   }
   return ["http://localhost:5173", "http://localhost:3000"];
 };

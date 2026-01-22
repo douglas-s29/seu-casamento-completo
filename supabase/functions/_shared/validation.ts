@@ -14,8 +14,8 @@ export const PaymentRequestSchema = z.object({
   })),
   customerName: z.string().min(2).max(100),
   customerEmail: z.string().email().optional(),
-  customerPhone: z.string().regex(/^\d{10,11}$/),
-  customerTaxId: z.string().regex(/^\d{11}$/),
+  customerPhone: z.string().min(1), // Accept any format, will be cleaned by function
+  customerTaxId: z.string().min(1), // Accept any format, will be cleaned by function
   returnUrl: z.string().url(),
   completionUrl: z.string().url(),
 });
@@ -39,9 +39,9 @@ export const AsaasPaymentRequestSchema = z.object({
   creditCardHolderInfo: z.object({
     name: z.string().min(3).max(100),
     email: z.string().email(),
-    cpfCnpj: z.string().regex(/^\d{11}$/),
-    postalCode: z.string().regex(/^\d{8}$/),
+    cpfCnpj: z.string().min(1), // Accept any format, will be cleaned by function
+    postalCode: z.string().min(1), // Accept any format, will be cleaned by function
     addressNumber: z.string().min(1).max(10),
-    phone: z.string().regex(/^\d{10,11}$/),
+    phone: z.string().min(1), // Accept any format, will be cleaned by function
   }).optional(),
 });

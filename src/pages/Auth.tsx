@@ -49,7 +49,8 @@ const Auth = () => {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>("weak");
   
-  // Brute force protection
+  // Brute force protection (client-side)
+  // Note: For production, implement server-side rate limiting via Edge Function
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 
