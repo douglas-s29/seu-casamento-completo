@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useCart } from "@/hooks/useCart";
 import { useAddGiftPurchase } from "@/hooks/useGiftPurchases";
@@ -15,7 +15,10 @@ import {
   ShieldCheck,
   Lock,
   Copy,
-  Check
+  Check,
+  Clock,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,9 +36,12 @@ import {
   formatCardExpiry,
   formatCEP 
 } from "@/utils/checkoutValidation";
-import { processPixPayment, processCreditCardPayment } from "@/services/paymentService";
+import { processPixPayment, processCreditCardPayment, checkPaymentStatus, cancelPayment } from "@/services/paymentService";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD";
+type PixStatus = "pending" | "paid" | "expired" | "cancelled";
+
+const PIX_TIMEOUT_SECONDS = 8 * 60; // 8 minutes
 
 const Checkout = () => {
   const { items, removeItem, updateQuantity, clearCart, getTotalPrice } = useCart();
@@ -48,11 +54,19 @@ const Checkout = () => {
   
   // PIX result state
   const [pixResult, setPixResult] = useState<{
+    paymentId?: string;
     pixQrCode?: string;
     pixCopyPaste?: string;
     invoiceUrl?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  // PIX status polling
+  const [pixStatus, setPixStatus] = useState<PixStatus>("pending");
+  const [timeRemaining, setTimeRemaining] = useState(PIX_TIMEOUT_SECONDS);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const customerNameRef = useRef<string>("");
   
   // Customer info
   const [name, setName] = useState("");
@@ -69,6 +83,109 @@ const Checkout = () => {
   const [addressNumber, setAddressNumber] = useState("");
 
   const totalPrice = getTotalPrice();
+
+  // Cleanup intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    };
+  }, []);
+
+  // Start polling for payment status
+  const startPolling = useCallback((paymentId: string) => {
+    // Start countdown
+    countdownIntervalRef.current = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 1) {
+          // Time expired - cancel payment
+          handleExpiredPayment(paymentId);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Start status polling every 5 seconds
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await checkPaymentStatus(paymentId);
+        
+        if (status.isPaid) {
+          setPixStatus("paid");
+          stopPolling();
+          toast({
+            title: "Pagamento confirmado!",
+            description: "Obrigado pela sua contribuição.",
+          });
+          // Navigate to thank you page after a short delay
+          setTimeout(() => {
+            navigate(`/agradecimento?name=${encodeURIComponent(customerNameRef.current)}&amount=${totalPrice}&items=${items.length}`);
+          }, 2000);
+        } else if (status.isCancelled) {
+          setPixStatus("cancelled");
+          stopPolling();
+        }
+      } catch (error) {
+        console.error("Error checking payment status:", error);
+      }
+    }, 5000);
+  }, [toast, navigate, totalPrice, items.length]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  }, []);
+
+  const handleExpiredPayment = useCallback(async (paymentId: string) => {
+    stopPolling();
+    setPixStatus("expired");
+    
+    try {
+      await cancelPayment(paymentId);
+      toast({
+        title: "Tempo esgotado",
+        description: "O pagamento PIX expirou e foi cancelado.",
+        variant: "destructive",
+      });
+    } catch (error) {
+      console.error("Error cancelling expired payment:", error);
+    }
+  }, [stopPolling, toast]);
+
+  const handleCancelPayment = useCallback(async () => {
+    if (!pixResult?.paymentId) return;
+    
+    stopPolling();
+    
+    try {
+      await cancelPayment(pixResult.paymentId);
+      setPixStatus("cancelled");
+      toast({
+        title: "Pagamento cancelado",
+        description: "Você pode tentar novamente quando quiser.",
+      });
+    } catch (error) {
+      console.error("Error cancelling payment:", error);
+      toast({
+        title: "Erro ao cancelar",
+        description: "Não foi possível cancelar o pagamento.",
+        variant: "destructive",
+      });
+    }
+  }, [pixResult?.paymentId, stopPolling, toast]);
+
+  const formatTimeRemaining = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -120,6 +237,9 @@ const Checkout = () => {
       const returnUrl = `${baseUrl}/presentes`;
       const completionUrl = `${baseUrl}/agradecimento?name=${encodeURIComponent(name.trim())}&amount=${totalPrice}&items=${items.length}`;
 
+      // Store customer name for later use
+      customerNameRef.current = name.trim();
+
       if (paymentMethod === "PIX") {
         // Process PIX payment via Asaas
         const result = await processPixPayment({
@@ -155,11 +275,19 @@ const Checkout = () => {
         // Show PIX QR code or redirect to invoice
         if (result.pixQrCode || result.pixCopyPaste) {
           setPixResult({
+            paymentId: result.paymentId,
             pixQrCode: result.pixQrCode,
             pixCopyPaste: result.pixCopyPaste,
             invoiceUrl: result.invoiceUrl,
           });
+          setTimeRemaining(PIX_TIMEOUT_SECONDS);
+          setPixStatus("pending");
           clearCart();
+          
+          // Start polling for payment status
+          if (result.paymentId) {
+            startPolling(result.paymentId);
+          }
         } else if (result.invoiceUrl) {
           clearCart();
           window.location.href = result.invoiceUrl;
@@ -222,6 +350,70 @@ const Checkout = () => {
 
   // Show PIX result screen
   if (pixResult) {
+    // Payment confirmed
+    if (pixStatus === "paid") {
+      return (
+        <Layout>
+          <div className="py-12 bg-gradient-to-b from-champagne/30 to-background min-h-screen">
+            <div className="container mx-auto px-4 max-w-lg">
+              <Card>
+                <CardHeader className="text-center">
+                  <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle2 className="w-10 h-10 text-green-600" />
+                  </div>
+                  <CardTitle className="font-serif text-2xl text-green-700">Pagamento Confirmado!</CardTitle>
+                  <p className="text-muted-foreground mt-2">
+                    Obrigado pela sua contribuição especial.
+                  </p>
+                </CardHeader>
+                <CardContent className="text-center space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Você será redirecionado automaticamente...
+                  </p>
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
+    // Payment expired or cancelled
+    if (pixStatus === "expired" || pixStatus === "cancelled") {
+      return (
+        <Layout>
+          <div className="py-12 bg-gradient-to-b from-champagne/30 to-background min-h-screen">
+            <div className="container mx-auto px-4 max-w-lg">
+              <Card>
+                <CardHeader className="text-center">
+                  <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                    <XCircle className="w-10 h-10 text-red-600" />
+                  </div>
+                  <CardTitle className="font-serif text-2xl text-red-700">
+                    {pixStatus === "expired" ? "Tempo Esgotado" : "Pagamento Cancelado"}
+                  </CardTitle>
+                  <p className="text-muted-foreground mt-2">
+                    {pixStatus === "expired" 
+                      ? "O prazo para pagamento expirou." 
+                      : "O pagamento foi cancelado."}
+                  </p>
+                </CardHeader>
+                <CardContent className="text-center space-y-4">
+                  <Button asChild className="w-full bg-gold hover:bg-gold-dark">
+                    <Link to="/presentes">
+                      Tentar novamente
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
+    // Pending - show QR code with timer
     return (
       <Layout>
         <div className="py-12 bg-gradient-to-b from-champagne/30 to-background min-h-screen">
@@ -237,6 +429,23 @@ const Checkout = () => {
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Timer countdown */}
+                <div className={`flex items-center justify-center gap-2 p-3 rounded-lg ${
+                  timeRemaining <= 60 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                }`}>
+                  <Clock className="w-5 h-5" />
+                  <span className="font-mono font-bold text-lg">
+                    {formatTimeRemaining(timeRemaining)}
+                  </span>
+                  <span className="text-sm">para pagar</span>
+                </div>
+
+                {/* Status indicator */}
+                <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Aguardando confirmação do pagamento...</span>
+                </div>
+
                 {pixResult.pixQrCode && (
                   <div className="flex justify-center">
                     <img 
@@ -267,11 +476,9 @@ const Checkout = () => {
                   </div>
                 )}
 
-                <div className="text-center space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Após o pagamento, você receberá a confirmação automaticamente.
-                  </p>
-                  
+                <Separator />
+
+                <div className="text-center space-y-3">
                   {pixResult.invoiceUrl && (
                     <Button asChild variant="outline" className="w-full">
                       <a href={pixResult.invoiceUrl} target="_blank" rel="noopener noreferrer">
@@ -280,10 +487,12 @@ const Checkout = () => {
                     </Button>
                   )}
                   
-                  <Button asChild className="w-full bg-gold hover:bg-gold-dark">
-                    <Link to="/presentes">
-                      Voltar para presentes
-                    </Link>
+                  <Button 
+                    variant="ghost" 
+                    className="w-full text-destructive hover:text-destructive"
+                    onClick={handleCancelPayment}
+                  >
+                    Cancelar pagamento
                   </Button>
                 </div>
               </CardContent>

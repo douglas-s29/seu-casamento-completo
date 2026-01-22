@@ -160,3 +160,66 @@ export const processCreditCardPayment = async (
     invoiceUrl: data.invoiceUrl,
   };
 };
+
+export interface PaymentStatusResponse {
+  success: boolean;
+  error?: string;
+  paymentId?: string;
+  status?: string;
+  isPaid?: boolean;
+  isPending?: boolean;
+  isCancelled?: boolean;
+}
+
+/**
+ * Check payment status via Asaas
+ */
+export const checkPaymentStatus = async (
+  paymentId: string
+): Promise<PaymentStatusResponse> => {
+  const { data, error } = await supabase.functions.invoke("asaas-payment-status", {
+    body: {
+      paymentId,
+      action: "check",
+    },
+  });
+
+  if (error) {
+    console.error("Payment status check error:", error);
+    throw new Error(error.message || "Erro ao verificar status do pagamento");
+  }
+
+  return {
+    success: data.success,
+    error: data.error,
+    paymentId: data.paymentId,
+    status: data.status,
+    isPaid: data.isPaid,
+    isPending: data.isPending,
+    isCancelled: data.isCancelled,
+  };
+};
+
+/**
+ * Cancel payment via Asaas
+ */
+export const cancelPayment = async (
+  paymentId: string
+): Promise<{ success: boolean; error?: string }> => {
+  const { data, error } = await supabase.functions.invoke("asaas-payment-status", {
+    body: {
+      paymentId,
+      action: "cancel",
+    },
+  });
+
+  if (error) {
+    console.error("Payment cancellation error:", error);
+    throw new Error(error.message || "Erro ao cancelar pagamento");
+  }
+
+  return {
+    success: data.success,
+    error: data.error,
+  };
+};
