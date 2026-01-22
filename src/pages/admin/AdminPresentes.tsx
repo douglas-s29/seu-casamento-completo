@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useGifts, useAddGift, useUpdateGift, useDeleteGift } from "@/hooks/useGifts";
 import { useGiftPurchases } from "@/hooks/useGiftPurchases";
 import { useWeddingSettings } from "@/hooks/useWeddingSettings";
-import { Plus, Trash2, Check, Pencil, X, Image, Users } from "lucide-react";
+import { Plus, Trash2, Check, Pencil, X, Image, Users, Clock, RefreshCcw, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Gift } from "@/hooks/useGifts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const AdminPresentes = () => {
   const { data: gifts } = useGifts();
@@ -187,6 +188,43 @@ const AdminPresentes = () => {
     return purchases?.filter(p => p.gift_id === giftId) || [];
   };
 
+  const getConfirmedPurchases = (giftId: string) => {
+    return purchases?.filter(p => p.gift_id === giftId && p.payment_status === "confirmed") || [];
+  };
+
+  const getPaymentStatusBadge = (status: string) => {
+    switch (status) {
+      case "confirmed":
+        return (
+          <Badge className="bg-success text-xs">
+            <Check className="w-3 h-3 mr-1" />
+            Confirmado
+          </Badge>
+        );
+      case "refunded":
+        return (
+          <Badge variant="destructive" className="text-xs">
+            <RefreshCcw className="w-3 h-3 mr-1" />
+            Estornado
+          </Badge>
+        );
+      case "cancelled":
+        return (
+          <Badge variant="secondary" className="text-xs">
+            <Ban className="w-3 h-3 mr-1" />
+            Cancelado
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="text-xs">
+            <Clock className="w-3 h-3 mr-1" />
+            Pendente
+          </Badge>
+        );
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -286,18 +324,37 @@ const AdminPresentes = () => {
                               <p className="font-medium text-sm">Compradores:</p>
                               <div className="grid gap-2">
                                 {giftPurchases.map((purchase) => (
-                                  <div key={purchase.id} className="flex items-center justify-between text-sm bg-background p-2 rounded">
-                                    <div>
-                                      <span className="font-medium">{purchase.purchaser_name}</span>
-                                      {purchase.purchaser_email && (
-                                        <span className="text-muted-foreground ml-2">({purchase.purchaser_email})</span>
-                                      )}
+                                  <div key={purchase.id} className="flex items-center justify-between text-sm bg-background p-3 rounded border">
+                                    <div className="flex items-center gap-3">
+                                      <div>
+                                        <span className="font-medium">{purchase.purchaser_name}</span>
+                                        {purchase.purchaser_email && (
+                                          <span className="text-muted-foreground ml-2">({purchase.purchaser_email})</span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="text-right">
-                                      <span className="font-medium text-gold">{formatCurrency(Number(purchase.amount))}</span>
-                                      <span className="text-muted-foreground text-xs ml-2">
-                                        {new Date(purchase.purchased_at).toLocaleDateString("pt-BR")}
-                                      </span>
+                                    <div className="flex items-center gap-3">
+                                      {getPaymentStatusBadge(purchase.payment_status)}
+                                      <div className="text-right">
+                                        <span className={`font-medium ${purchase.payment_status === "confirmed" ? "text-gold" : "text-muted-foreground"}`}>
+                                          {formatCurrency(Number(purchase.amount))}
+                                        </span>
+                                        <span className="text-muted-foreground text-xs ml-2">
+                                          {new Date(purchase.purchased_at).toLocaleDateString("pt-BR")}
+                                        </span>
+                                      </div>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span className="text-xs text-muted-foreground">
+                                              {purchase.payment_gateway === "asaas" ? "💳" : "📱"}
+                                            </span>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            {purchase.payment_gateway === "asaas" ? "Cartão de Crédito (Asaas)" : "PIX/Boleto (AbacatePay)"}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                     </div>
                                   </div>
                                 ))}

@@ -8,6 +8,9 @@ export interface GiftPurchase {
   purchaser_email: string | null;
   amount: number;
   purchased_at: string;
+  payment_status: string;
+  external_payment_id: string | null;
+  payment_gateway: string | null;
 }
 
 export function useGiftPurchases() {
@@ -32,6 +35,8 @@ export function useGiftPurchasesByDay() {
       const { data, error } = await supabase
         .from("gift_purchases")
         .select("*")
+        // Only count confirmed purchases
+        .eq("payment_status", "confirmed")
         .order("purchased_at", { ascending: true });
       
       if (error) throw error;
@@ -62,13 +67,20 @@ export function useAddGiftPurchase() {
       purchaserName,
       purchaserEmail,
       amount,
+      paymentStatus = "pending",
+      externalPaymentId,
+      paymentGateway,
     }: {
       giftId: string;
       purchaserName: string;
       purchaserEmail?: string;
       amount: number;
+      paymentStatus?: string;
+      externalPaymentId?: string;
+      paymentGateway?: string;
     }) => {
-      // Insert purchase record
+      // Insert purchase record with pending status
+      // The purchase_count will be incremented by the webhook when payment is confirmed
       const { data: purchase, error: purchaseError } = await supabase
         .from("gift_purchases")
         .insert({
@@ -76,35 +88,14 @@ export function useAddGiftPurchase() {
           purchaser_name: purchaserName,
           purchaser_email: purchaserEmail || null,
           amount,
-        })
+          payment_status: paymentStatus,
+          external_payment_id: externalPaymentId || null,
+          payment_gateway: paymentGateway || null,
+        } as any)
         .select()
         .single();
 
       if (purchaseError) throw purchaseError;
-
-      // Update purchase_count on the gift
-      const { data: gift } = await supabase
-        .from("gifts")
-        .select("purchase_count, purchase_limit")
-        .eq("id", giftId)
-        .single();
-
-      if (gift) {
-        const newCount = ((gift as any).purchase_count || 0) + 1;
-        const limit = (gift as any).purchase_limit || 1;
-        const isPurchased = newCount >= limit;
-        
-        await supabase
-          .from("gifts")
-          .update({
-            purchase_count: newCount,
-            purchased: isPurchased,
-            purchaser_name: purchaserName,
-            purchaser_email: purchaserEmail || null,
-            purchased_at: new Date().toISOString(),
-          } as any)
-          .eq("id", giftId);
-      }
 
       return purchase;
     },

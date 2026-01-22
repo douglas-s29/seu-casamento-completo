@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.abacatepay-payment]
 verify_jwt = false
+
+[functions.asaas-webhook]
+verify_jwt = false
+
+[functions.abacatepay-webhook]
+verify_jwt = false
