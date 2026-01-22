@@ -1,7 +1,8 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { sanitizeForLog } from "../_shared/sanitize.ts";
+import { PaymentRequestSchema } from "../_shared/validation.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { fetchWithRetry } from "../_shared/retry.ts";
 
 interface Product {
   externalId: string;
@@ -22,9 +23,12 @@ interface PaymentRequest {
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(origin);
   }
 
   try {
@@ -33,16 +37,41 @@ Deno.serve(async (req) => {
       console.error("ABACATEPAY_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "Configuração de pagamento não encontrada" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    // Rate limiting - use customer phone or IP as identifier
+    const identifier = req.headers.get("x-forwarded-for") || "unknown";
+    const rateLimit = checkRateLimit(identifier, 10, 60000);
+    
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Muitas requisições. Tente novamente em alguns instantes." }),
+        { status: 429, headers: corsHeaders }
       );
     }
 
     const body: PaymentRequest = await req.json();
-    console.log("Payment request received:", { 
+    
+    // Validate request payload
+    const validation = PaymentRequestSchema.safeParse(body);
+    if (!validation.success) {
+      console.error("Validation failed:", validation.error.errors);
+      return new Response(
+        JSON.stringify({ 
+          error: "Dados inválidos", 
+          details: validation.error.errors.map(e => e.message).join(", ")
+        }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    console.log("Payment request received:", sanitizeForLog({ 
       products: body.products?.length,
       customerName: body.customerName,
       customerPhone: body.customerPhone,
-    });
+    }));
 
     // Build payload according to AbacatePay documentation
     const billingPayload = {
@@ -62,19 +91,50 @@ Deno.serve(async (req) => {
       },
     };
 
-    console.log("Creating billing with payload:", JSON.stringify(billingPayload, null, 2));
+    console.log("Creating billing with payload:", sanitizeForLog(billingPayload));
 
-    const billingResponse = await fetch("https://api.abacatepay.com/v1/billing/create", {
+    // Generate idempotency key
+    const idempotencyKey = crypto.randomUUID();
+
+    const billingResponse = await fetchWithRetry("https://api.abacatepay.com/v1/billing/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${ABACATEPAY_API_KEY}`,
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify(billingPayload),
-    });
+    }, 3);
+
+    if (!billingResponse.ok) {
+      const errorText = await billingResponse.text();
+      console.error("AbacatePay API error:", {
+        status: billingResponse.status,
+        body: errorText,
+      });
+      
+      return new Response(
+        JSON.stringify({ 
+          error: "Erro ao processar pagamento", 
+          details: billingResponse.status >= 500 
+            ? "Serviço temporariamente indisponível" 
+            : "Dados inválidos",
+        }),
+        { status: billingResponse.status, headers: corsHeaders }
+      );
+    }
 
     const billingData = await billingResponse.json();
-    console.log("AbacatePay response:", JSON.stringify(billingData, null, 2));
+    console.log("AbacatePay response:", sanitizeForLog(billingData));
+
+    // Validate response structure
+    if (!billingData.data?.id || !billingData.data?.url) {
+      console.error("Invalid AbacatePay response structure:", billingData);
+      return new Response(
+        JSON.stringify({ error: "Resposta inválida do gateway de pagamento" }),
+        { status: 500, headers: corsHeaders }
+      );
+    }
 
     if (billingData.error) {
       console.error("AbacatePay error:", billingData.error);
@@ -83,7 +143,7 @@ Deno.serve(async (req) => {
           error: "Erro ao criar cobrança", 
           details: billingData.error 
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -97,7 +157,7 @@ Deno.serve(async (req) => {
       }),
       { 
         status: 200, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        headers: corsHeaders
       }
     );
 
@@ -105,7 +165,7 @@ Deno.serve(async (req) => {
     console.error("Error processing payment:", error);
     return new Response(
       JSON.stringify({ error: "Erro interno ao processar pagamento" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });
