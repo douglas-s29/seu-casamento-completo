@@ -234,6 +234,7 @@ export type Database = {
       wedding_settings: {
         Row: {
           account_holder: string | null
+          background_image_url: string | null
           bank_name: string | null
           bride_name: string
           ceremony_address: string | null
@@ -254,6 +255,7 @@ export type Database = {
         }
         Insert: {
           account_holder?: string | null
+          background_image_url?: string | null
           bank_name?: string | null
           bride_name?: string
           ceremony_address?: string | null
@@ -274,6 +276,7 @@ export type Database = {
         }
         Update: {
           account_holder?: string | null
+          background_image_url?: string | null
           bank_name?: string | null
           bride_name?: string
           ceremony_address?: string | null

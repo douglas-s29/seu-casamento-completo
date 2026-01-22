@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, CreditCard, Users, Settings } from "lucide-react";
+import { MapPin, CreditCard, Users, Settings, Image, X, Upload } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const AdminConfiguracoes = () => {
   const { data: settings } = useWeddingSettings();
@@ -29,7 +30,10 @@ const AdminConfiguracoes = () => {
     bank_name: "",
     account_holder: "",
     gift_purchase_limit: "8",
+    background_image_url: "",
   });
+
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -49,9 +53,62 @@ const AdminConfiguracoes = () => {
         bank_name: settings.bank_name || "",
         account_holder: settings.account_holder || "",
         gift_purchase_limit: String((settings as any).gift_purchase_limit || 8),
+        background_image_url: (settings as any).background_image_url || "",
       });
     }
   }, [settings]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione uma imagem válida.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "Erro",
+        description: "A imagem deve ter no máximo 5MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `background-${crypto.randomUUID()}.${fileExt}`;
+      const filePath = `backgrounds/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("gift-images")
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("gift-images")
+        .getPublicUrl(filePath);
+
+      setForm((f) => ({ ...f, background_image_url: publicUrl }));
+      toast({ title: "Imagem carregada!" });
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      toast({
+        title: "Erro ao carregar imagem",
+        description: error.message || "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!settings?.id) return;
@@ -72,6 +129,7 @@ const AdminConfiguracoes = () => {
       bank_name: form.bank_name,
       account_holder: form.account_holder,
       gift_purchase_limit: parseInt(form.gift_purchase_limit) || 8,
+      background_image_url: form.background_image_url || null,
     } as any);
     toast({ title: "Configurações salvas!" });
   };
@@ -92,12 +150,12 @@ const AdminConfiguracoes = () => {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Nome do Noivo</Label>
-              <Input value={form.groom_name} onChange={(e) => update("groom_name", e.target.value)} />
-            </div>
-            <div>
               <Label>Nome da Noiva</Label>
               <Input value={form.bride_name} onChange={(e) => update("bride_name", e.target.value)} />
+            </div>
+            <div>
+              <Label>Nome do Noivo</Label>
+              <Input value={form.groom_name} onChange={(e) => update("groom_name", e.target.value)} />
             </div>
           </div>
           <div>
@@ -107,6 +165,58 @@ const AdminConfiguracoes = () => {
           <div>
             <Label>Nossa História</Label>
             <Textarea value={form.story_text} onChange={(e) => update("story_text", e.target.value)} rows={4} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Image className="w-5 h-5" />
+            Imagem de Fundo
+          </CardTitle>
+          <CardDescription>
+            Adicione uma imagem de fundo para a página inicial
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Papel de Parede</Label>
+            <div className="flex items-start gap-4">
+              {form.background_image_url ? (
+                <div className="relative">
+                  <img
+                    src={form.background_image_url}
+                    alt="Background preview"
+                    className="w-32 h-20 object-cover rounded border"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 w-6 h-6"
+                    onClick={() => update("background_image_url", "")}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="w-32 h-20 bg-muted rounded border flex items-center justify-center">
+                  <Image className="w-8 h-8 text-muted-foreground" />
+                </div>
+              )}
+              <div className="flex-1">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={isUploading}
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  JPG, PNG ou WebP. Recomendado: 1920x1080. Máximo 5MB.
+                </p>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -213,7 +323,7 @@ const AdminConfiguracoes = () => {
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave} disabled={updateSettings.isPending} className="bg-gold hover:bg-gold-dark">
+      <Button onClick={handleSave} disabled={updateSettings.isPending || isUploading} className="bg-gold hover:bg-gold-dark">
         {updateSettings.isPending ? "Salvando..." : "Salvar Configurações"}
       </Button>
     </div>
