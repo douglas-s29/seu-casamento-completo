@@ -235,7 +235,9 @@ const Checkout = () => {
     try {
       const baseUrl = window.location.origin;
       const returnUrl = `${baseUrl}/presentes`;
-      const completionUrl = `${baseUrl}/agradecimento?name=${encodeURIComponent(name.trim())}&amount=${totalPrice}&items=${items.length}`;
+      // Use relative path for navigate(), full URL for external services
+      const completionPath = `/agradecimento?name=${encodeURIComponent(name.trim())}&amount=${totalPrice}&items=${items.length}`;
+      const completionUrl = `${baseUrl}${completionPath}`;
 
       // Store customer name for later use
       customerNameRef.current = name.trim();
@@ -334,7 +336,7 @@ const Checkout = () => {
           title: "Pagamento em processamento!",
           description: "Você receberá a confirmação em breve.",
         });
-        navigate(completionUrl);
+        navigate(completionPath);
       }
     } catch (error: any) {
       console.error("Checkout error:", error);
