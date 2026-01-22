@@ -275,7 +275,7 @@ const Presentes = () => {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              Você será redirecionado para a página de pagamento PIX.
+              Você será redirecionado para a página de pagamento (PIX ou Boleto).
             </p>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -293,7 +293,7 @@ const Presentes = () => {
                   Processando...
                 </>
               ) : (
-                "Pagar com PIX"
+                "Continuar para pagamento"
               )}
             </Button>
           </DialogFooter>
