@@ -14,11 +14,19 @@ const Index = () => {
 
   const groomName = settings?.groom_name || "Noivo";
   const brideName = settings?.bride_name || "Noiva";
+  const backgroundImageUrl = (settings as any)?.background_image_url;
 
   return (
     <Layout>
       {/* Hero Section */}
-      <section className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center relative bg-gradient-to-b from-champagne/50 to-background px-4">
+      <section 
+        className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center relative px-4"
+        style={{
+          background: backgroundImageUrl 
+            ? `linear-gradient(rgba(0,0,0,0.1), rgba(0,0,0,0.1)), url(${backgroundImageUrl}) center/cover no-repeat`
+            : 'linear-gradient(to bottom, hsl(var(--champagne) / 0.5), hsl(var(--background)))'
+        }}
+      >
         <div className="text-center space-y-8 animate-fade-in">
           <div className="space-y-2">
             <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground font-sans">
