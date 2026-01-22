@@ -25,9 +25,9 @@ const Index = () => {
               Casamento de
             </p>
             <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-foreground">
-              {groomName}
-              <span className="text-gold mx-4">&</span>
               {brideName}
+              <span className="text-gold mx-4">&</span>
+              {groomName}
             </h1>
           </div>
 

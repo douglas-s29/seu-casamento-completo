@@ -148,9 +148,6 @@ const Presentes = () => {
                             {limit > 1 && (
                               <div className="mt-3">
                                 <Progress value={progress} className="h-1.5" />
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {limit - purchaseCount} disponíveis
-                                </p>
                               </div>
                             )}
                           </CardContent>
