@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useWeddingSettings, useUpdateWeddingSettings } from "@/hooks/useWeddingSettings";
+import { useWeddingSettingsAdmin, useUpdateWeddingSettings } from "@/hooks/useWeddingSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import { MapPin, CreditCard, Users, Settings, Image, X, Upload } from "lucide-re
 import { supabase } from "@/integrations/supabase/client";
 
 const AdminConfiguracoes = () => {
-  const { data: settings } = useWeddingSettings();
+  const { data: settings } = useWeddingSettingsAdmin();
   const updateSettings = useUpdateWeddingSettings();
   const { toast } = useToast();
 
