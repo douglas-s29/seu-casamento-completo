@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { logWebhook } from "../_shared/webhookLog.ts";
 
 interface AbacateWebhookPayload {
   event: string;
@@ -19,10 +16,51 @@ interface AbacateWebhookPayload {
   };
 }
 
+const validateAbacateWebhook = async (payload: string, signature: string | null): Promise<boolean> => {
+  const secret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
+  
+  // If no secret configured, log warning but allow (for backwards compatibility)
+  if (!secret) {
+    console.warn("ABACATEPAY_WEBHOOK_SECRET not configured - webhook signature not validated");
+    return true;
+  }
+  
+  if (!signature) {
+    console.error("Missing webhook signature");
+    return false;
+  }
+  
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    
+    const expectedSignature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(payload)
+    );
+    
+    const expectedSignatureBase64 = btoa(String.fromCharCode(...new Uint8Array(expectedSignature)));
+    return signature === expectedSignatureBase64;
+  } catch (error) {
+    console.error("Error validating webhook signature:", error);
+    return false;
+  }
+};
+
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(origin);
   }
 
   try {
@@ -31,7 +69,20 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const body: AbacateWebhookPayload = await req.json();
+    // Validate webhook signature
+    const signature = req.headers.get("X-Abacate-Signature");
+    const bodyText = await req.text();
+    
+    const isValid = await validateAbacateWebhook(bodyText, signature);
+    if (!isValid) {
+      await logWebhook(supabase, "abacatepay", "signature_validation_failed", {}, false, "Invalid signature");
+      return new Response(
+        JSON.stringify({ error: "Invalid signature" }),
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const body: AbacateWebhookPayload = JSON.parse(bodyText);
     console.log("AbacatePay webhook received:", JSON.stringify(body, null, 2));
 
     const { event, data } = body;
@@ -39,9 +90,10 @@ Deno.serve(async (req) => {
 
     if (!billing) {
       console.log("No billing data in webhook");
+      await logWebhook(supabase, "abacatepay", event, body, true);
       return new Response(
         JSON.stringify({ success: true, message: "No billing data" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -63,9 +115,10 @@ Deno.serve(async (req) => {
         break;
       default:
         console.log(`Unhandled billing status: ${billing.status}`);
+        await logWebhook(supabase, "abacatepay", event, body, true, `Unhandled status: ${billing.status}`);
         return new Response(
           JSON.stringify({ success: true, message: `Status ${billing.status} not handled` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 200, headers: corsHeaders }
         );
     }
 
@@ -80,14 +133,16 @@ Deno.serve(async (req) => {
 
     if (findError) {
       console.error("Error finding purchase:", findError);
+      await logWebhook(supabase, "abacatepay", event, body, false, findError.message);
       throw findError;
     }
 
     if (!purchase) {
       console.log(`No purchase found for billing ${billingId}`);
+      await logWebhook(supabase, "abacatepay", event, body, true, "Purchase not found");
       return new Response(
         JSON.stringify({ success: true, message: "Purchase not found" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -101,6 +156,7 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       console.error("Error updating purchase:", updateError);
+      await logWebhook(supabase, "abacatepay", event, body, false, updateError.message);
       throw updateError;
     }
 
@@ -127,6 +183,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Purchase ${purchase.id} updated from ${previousStatus} to ${newStatus}`);
+    await logWebhook(supabase, "abacatepay", event, body, true);
 
     return new Response(
       JSON.stringify({ 
@@ -135,14 +192,14 @@ Deno.serve(async (req) => {
         previousStatus,
         newStatus 
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: corsHeaders }
     );
 
   } catch (error) {
     console.error("Error processing webhook:", error);
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });

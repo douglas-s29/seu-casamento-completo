@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/useAuth";
-import { LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
+import { LogIn, UserPlus, Eye, EyeOff, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,29 @@ import { z } from "zod";
 const emailSchema = z.string().email("E-mail inválido");
 const passwordSchema = z.string().min(6, "A senha deve ter pelo menos 6 caracteres");
 
+// Strong password schema for sign up
+const strongPasswordSchema = z.string()
+  .min(8, "Senha deve ter no mínimo 8 caracteres")
+  .regex(/[A-Z]/, "Senha deve conter ao menos uma letra maiúscula")
+  .regex(/[a-z]/, "Senha deve conter ao menos uma letra minúscula")
+  .regex(/[0-9]/, "Senha deve conter ao menos um número")
+  .regex(/[^A-Za-z0-9]/, "Senha deve conter ao menos um caractere especial");
+
+type PasswordStrength = "weak" | "medium" | "strong";
+
+const checkPasswordStrength = (password: string): PasswordStrength => {
+  let strength = 0;
+  if (password.length >= 8) strength++;
+  if (/[A-Z]/.test(password)) strength++;
+  if (/[a-z]/.test(password)) strength++;
+  if (/[0-9]/.test(password)) strength++;
+  if (/[^A-Za-z0-9]/.test(password)) strength++;
+  
+  if (strength <= 2) return "weak";
+  if (strength <= 4) return "medium";
+  return "strong";
+};
+
 const Auth = () => {
   const navigate = useNavigate();
   const { signIn, signUp, user, isAdmin, loading } = useAuth();
@@ -24,6 +47,19 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>("weak");
+  
+  // Brute force protection (client-side)
+  // Note: For production, implement server-side rate limiting via Edge Function
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+
+  // Check password strength as user types
+  useEffect(() => {
+    if (password) {
+      setPasswordStrength(checkPasswordStrength(password));
+    }
+  }, [password]);
 
   // Redirect if already logged in as admin
   if (!loading && user && isAdmin) {
@@ -31,7 +67,7 @@ const Auth = () => {
     return null;
   }
 
-  const validateInputs = () => {
+  const validateInputs = (isSignUp: boolean = false) => {
     const newErrors: { email?: string; password?: string } = {};
 
     const emailResult = emailSchema.safeParse(email);
@@ -39,9 +75,17 @@ const Auth = () => {
       newErrors.email = emailResult.error.errors[0].message;
     }
 
-    const passwordResult = passwordSchema.safeParse(password);
-    if (!passwordResult.success) {
-      newErrors.password = passwordResult.error.errors[0].message;
+    // Use strong password validation for sign up
+    if (isSignUp) {
+      const passwordResult = strongPasswordSchema.safeParse(password);
+      if (!passwordResult.success) {
+        newErrors.password = passwordResult.error.errors[0].message;
+      }
+    } else {
+      const passwordResult = passwordSchema.safeParse(password);
+      if (!passwordResult.success) {
+        newErrors.password = passwordResult.error.errors[0].message;
+      }
     }
 
     setErrors(newErrors);
@@ -50,21 +94,49 @@ const Auth = () => {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateInputs()) return;
+    
+    // Check if account is locked
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      toast({
+        title: "Conta temporariamente bloqueada",
+        description: `Muitas tentativas de login. Tente novamente em ${remaining} segundos.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!validateInputs(false)) return;
 
     setIsSubmitting(true);
     try {
       const { error } = await signIn(email, password);
 
       if (error) {
-        toast({
-          title: "Erro ao entrar",
-          description: error.message === "Invalid login credentials"
-            ? "E-mail ou senha incorretos."
-            : error.message,
-          variant: "destructive",
-        });
+        const newAttempts = loginAttempts + 1;
+        setLoginAttempts(newAttempts);
+        
+        if (newAttempts >= 5) {
+          const lockTime = Date.now() + (30 * 60 * 1000); // 30 minutes
+          setLockoutUntil(lockTime);
+          toast({
+            title: "Conta bloqueada",
+            description: "Muitas tentativas de login. Tente novamente em 30 minutos.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Erro ao entrar",
+            description: error.message === "Invalid login credentials"
+              ? `E-mail ou senha incorretos. (${5 - newAttempts} tentativas restantes)`
+              : error.message,
+            variant: "destructive",
+          });
+        }
       } else {
+        // Reset attempts on successful login
+        setLoginAttempts(0);
+        setLockoutUntil(null);
         toast({
           title: "Bem-vindo!",
           description: "Login realizado com sucesso.",
@@ -84,7 +156,7 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateInputs()) return;
+    if (!validateInputs(true)) return;
 
     setIsSubmitting(true);
     try {
@@ -214,7 +286,7 @@ const Auth = () => {
                           type={showPassword ? "text" : "password"}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Mínimo 6 caracteres"
+                          placeholder="Mínimo 8 caracteres"
                         />
                         <button
                           type="button"
@@ -228,6 +300,22 @@ const Auth = () => {
                           )}
                         </button>
                       </div>
+                      {password && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <Shield className="w-3 h-3" />
+                          <span className={
+                            passwordStrength === "strong" ? "text-green-600" :
+                            passwordStrength === "medium" ? "text-yellow-600" :
+                            "text-red-600"
+                          }>
+                            Força: {
+                              passwordStrength === "strong" ? "Forte" :
+                              passwordStrength === "medium" ? "Média" :
+                              "Fraca"
+                            }
+                          </span>
+                        </div>
+                      )}
                       {errors.password && (
                         <p className="text-xs text-destructive">{errors.password}</p>
                       )}

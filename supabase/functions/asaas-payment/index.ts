@@ -1,9 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { sanitizeForLog } from "../_shared/sanitize.ts";
+import { AsaasPaymentRequestSchema } from "../_shared/validation.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { validateCreditCard } from "../_shared/cardValidation.ts";
 
 interface PaymentRequest {
   giftId: string;
@@ -29,10 +29,27 @@ interface PaymentRequest {
   };
 }
 
+const findCustomerByEmail = async (email: string, baseUrl: string, apiKey: string): Promise<{ id: string } | undefined> => {
+  const response = await fetch(
+    `${baseUrl}/customers?email=${encodeURIComponent(email)}`,
+    {
+      headers: {
+        "access_token": apiKey,
+      },
+    }
+  );
+  
+  const data = await response.json();
+  return data.data?.[0];
+};
+
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(origin);
   }
 
   try {
@@ -41,7 +58,18 @@ Deno.serve(async (req) => {
       console.error("ASAAS_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "Configuração de pagamento não encontrada" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    // Rate limiting
+    const identifier = req.headers.get("x-forwarded-for") || "unknown";
+    const rateLimit = checkRateLimit(identifier, 10, 60000);
+    
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Muitas requisições. Tente novamente em alguns instantes." }),
+        { status: 429, headers: corsHeaders }
       );
     }
 
@@ -54,13 +82,38 @@ Deno.serve(async (req) => {
     console.log(`Using Asaas ${isSandbox ? 'Sandbox' : 'Production'} API`);
 
     const body: PaymentRequest = await req.json();
-    console.log("Payment request received:", { 
+    
+    // Validate request payload
+    const validation = AsaasPaymentRequestSchema.safeParse(body);
+    if (!validation.success) {
+      console.error("Validation failed:", validation.error.errors);
+      return new Response(
+        JSON.stringify({ 
+          error: "Dados inválidos", 
+          details: validation.error.errors.map(e => e.message).join(", ")
+        }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Validate credit card if payment is by card
+    if (body.billingType === "CREDIT_CARD" && body.creditCard) {
+      const cardValidation = validateCreditCard(body.creditCard);
+      if (!cardValidation.valid) {
+        return new Response(
+          JSON.stringify({ error: cardValidation.error }),
+          { status: 400, headers: corsHeaders }
+        );
+      }
+    }
+
+    console.log("Payment request received:", sanitizeForLog({ 
       giftId: body.giftId, 
       giftName: body.giftName,
       value: body.value,
       billingType: body.billingType,
       customerName: body.customerName 
-    });
+    }));
 
     // First, create or find customer
     const customerResponse = await fetch(`${baseUrl}/customers`, {
@@ -77,13 +130,43 @@ Deno.serve(async (req) => {
     });
 
     const customerData = await customerResponse.json();
-    console.log("Customer response:", customerData);
+    console.log("Customer response:", sanitizeForLog(customerData));
 
-    if (!customerData.id && !customerData.errors) {
-      throw new Error("Falha ao criar cliente no Asaas");
+    let customerId = customerData.id;
+
+    // Handle customer already exists case
+    if (!customerId && customerData.errors) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const alreadyExistsError = customerData.errors.find((e: any) => 
+        e.code === "customer_already_exists"
+      );
+      
+      if (alreadyExistsError && body.customerEmail) {
+        const existingCustomer = await findCustomerByEmail(body.customerEmail, baseUrl, ASAAS_API_KEY);
+        if (existingCustomer) {
+          customerId = existingCustomer.id;
+          console.log("Using existing customer:", customerId);
+        }
+      }
+      
+      if (!customerId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const errorMessages = customerData.errors.map((e: any) => e.description).join(", ");
+        console.error("Asaas customer creation failed:", customerData.errors);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: "Erro ao criar cliente", 
+            details: errorMessages,
+          }),
+          { status: 400, headers: corsHeaders }
+        );
+      }
     }
 
-    const customerId = customerData.id;
+    if (!customerId) {
+      throw new Error("Falha ao criar ou encontrar cliente no Asaas");
+    }
 
     // Calculate due date (today + 1 day)
     const dueDate = new Date();
@@ -106,10 +189,7 @@ Deno.serve(async (req) => {
       paymentPayload.creditCardHolderInfo = body.creditCardHolderInfo;
     }
 
-    console.log("Creating payment with payload:", { 
-      ...paymentPayload, 
-      creditCard: paymentPayload.creditCard ? "[REDACTED]" : undefined 
-    });
+    console.log("Creating payment with payload:", sanitizeForLog(paymentPayload));
 
     const paymentResponse = await fetch(`${baseUrl}/payments`, {
       method: "POST",
@@ -121,16 +201,26 @@ Deno.serve(async (req) => {
     });
 
     const paymentData = await paymentResponse.json();
-    console.log("Payment response:", paymentData);
+    console.log("Payment response:", sanitizeForLog(paymentData));
 
     if (paymentData.errors) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errorMessages = paymentData.errors.map((e: any) => e.description).join(", ");
       console.error("Asaas payment error:", paymentData.errors);
       return new Response(
         JSON.stringify({ 
           error: "Erro ao processar pagamento", 
-          details: paymentData.errors 
+          details: errorMessages
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    if (!paymentData.id) {
+      console.error("Invalid payment response:", paymentData);
+      return new Response(
+        JSON.stringify({ error: "Resposta inválida do gateway de pagamento" }),
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -160,7 +250,7 @@ Deno.serve(async (req) => {
       }),
       { 
         status: 200, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        headers: corsHeaders
       }
     );
 
@@ -168,7 +258,7 @@ Deno.serve(async (req) => {
     console.error("Error processing payment:", error);
     return new Response(
       JSON.stringify({ error: "Erro interno ao processar pagamento" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });

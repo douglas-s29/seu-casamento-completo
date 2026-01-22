@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, asaas-access-token",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { logWebhook } from "../_shared/webhookLog.ts";
 
 interface AsaasWebhookPayload {
   event: string;
@@ -17,10 +14,30 @@ interface AsaasWebhookPayload {
   };
 }
 
+const validateAsaasWebhook = (token: string | null): boolean => {
+  const expectedToken = Deno.env.get("ASAAS_WEBHOOK_TOKEN");
+  
+  // If no token configured, log warning but allow (for backwards compatibility)
+  if (!expectedToken) {
+    console.warn("ASAAS_WEBHOOK_TOKEN not configured - webhook token not validated");
+    return true;
+  }
+  
+  if (!token) {
+    console.error("Missing webhook token");
+    return false;
+  }
+  
+  return token === expectedToken;
+};
+
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(origin);
   }
 
   try {
@@ -29,6 +46,16 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Validate webhook token
+    const token = req.headers.get("asaas-access-token");
+    if (!validateAsaasWebhook(token)) {
+      await logWebhook(supabase, "asaas", "token_validation_failed", {}, false, "Unauthorized");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
     const body: AsaasWebhookPayload = await req.json();
     console.log("Asaas webhook received:", JSON.stringify(body, null, 2));
 
@@ -36,9 +63,10 @@ Deno.serve(async (req) => {
 
     if (!payment) {
       console.log("No payment data in webhook");
+      await logWebhook(supabase, "asaas", event, body, true);
       return new Response(
         JSON.stringify({ success: true, message: "No payment data" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -60,9 +88,10 @@ Deno.serve(async (req) => {
         break;
       default:
         console.log(`Unhandled event type: ${event}`);
+        await logWebhook(supabase, "asaas", event, body, true, `Unhandled event: ${event}`);
         return new Response(
           JSON.stringify({ success: true, message: `Event ${event} not handled` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 200, headers: corsHeaders }
         );
     }
 
@@ -77,14 +106,16 @@ Deno.serve(async (req) => {
 
     if (findError) {
       console.error("Error finding purchase:", findError);
+      await logWebhook(supabase, "asaas", event, body, false, findError.message);
       throw findError;
     }
 
     if (!purchase) {
       console.log(`No purchase found for payment ${paymentId}`);
+      await logWebhook(supabase, "asaas", event, body, true, "Purchase not found");
       return new Response(
         JSON.stringify({ success: true, message: "Purchase not found" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -98,6 +129,7 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       console.error("Error updating purchase:", updateError);
+      await logWebhook(supabase, "asaas", event, body, false, updateError.message);
       throw updateError;
     }
 
@@ -124,6 +156,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Purchase ${purchase.id} updated from ${previousStatus} to ${newStatus}`);
+    await logWebhook(supabase, "asaas", event, body, true);
 
     return new Response(
       JSON.stringify({ 
@@ -132,14 +165,14 @@ Deno.serve(async (req) => {
         previousStatus,
         newStatus 
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: corsHeaders }
     );
 
   } catch (error) {
     console.error("Error processing webhook:", error);
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });

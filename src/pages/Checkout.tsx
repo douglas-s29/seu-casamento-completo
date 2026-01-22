@@ -22,8 +22,9 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "react-router-dom";
+import { validateCheckoutForm } from "@/utils/checkoutValidation";
+import { processPixPayment, processCreditCardPayment } from "@/services/paymentService";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD";
 
@@ -60,42 +61,28 @@ const Checkout = () => {
   };
 
   const handleCheckout = async () => {
-    if (!name.trim()) {
+    // Validate form
+    const validation = validateCheckoutForm({
+      name,
+      email,
+      phone,
+      cpf,
+      paymentMethod,
+      cardNumber,
+      cardHolder,
+      cardExpiry,
+      cardCvv,
+      postalCode,
+      addressNumber,
+    });
+
+    if (!validation.valid) {
       toast({
         title: "Erro",
-        description: "Por favor, informe seu nome.",
+        description: validation.error,
         variant: "destructive",
       });
       return;
-    }
-
-    if (!phone.trim()) {
-      toast({
-        title: "Erro",
-        description: "Por favor, informe seu telefone.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!cpf.trim()) {
-      toast({
-        title: "Erro",
-        description: "Por favor, informe seu CPF.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (paymentMethod === "CREDIT_CARD") {
-      if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !cpf || !postalCode || !addressNumber || !email) {
-        toast({
-          title: "Erro",
-          description: "Por favor, preencha todos os campos do cartão.",
-          variant: "destructive",
-        });
-        return;
-      }
     }
 
     setIsProcessing(true);
@@ -105,96 +92,74 @@ const Checkout = () => {
       const completionUrl = `${baseUrl}/agradecimento?name=${encodeURIComponent(name.trim())}&amount=${totalPrice}&items=${items.length}`;
 
       if (paymentMethod === "PIX") {
-        // Build products array for AbacatePay
-        const products = items.map((item) => ({
-          externalId: item.giftId,
-          name: item.name,
-          description: `Presente de Casamento: ${item.name}`,
-          quantity: item.quantity,
-          price: Math.round(item.price * 100), // Convert to cents
-        }));
-
-        const { data, error } = await supabase.functions.invoke("abacatepay-payment", {
-          body: {
-            products,
-            customerName: name.trim(),
-            customerEmail: email.trim() || undefined,
-            customerPhone: phone.replace(/\D/g, ""),
-            customerTaxId: cpf.replace(/\D/g, ""),
-            returnUrl,
-            completionUrl,
+        // Process PIX payment using service
+        const result = await processPixPayment({
+          items: items.map(item => ({
+            giftId: item.giftId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+          customerData: {
+            name: name.trim(),
+            email: email.trim() || undefined,
+            phone,
+            cpf,
           },
+          returnUrl,
+          completionUrl,
         });
 
-        if (error) throw error;
-
-        if (data.success && data.paymentUrl) {
-          // Record purchases with pending status
-          for (const item of items) {
-            await addPurchase.mutateAsync({
-              giftId: item.giftId,
-              purchaserName: name.trim(),
-              purchaserEmail: email.trim() || undefined,
-              amount: item.price * item.quantity,
-              paymentStatus: "pending",
-              externalPaymentId: data.billingId,
-              paymentGateway: "abacatepay",
-            });
-          }
-
-          clearCart();
-          window.location.href = data.paymentUrl;
-        } else {
-          throw new Error(data.error || "Erro ao criar cobrança");
+        // Record purchases with pending status
+        for (const item of items) {
+          await addPurchase.mutateAsync({
+            giftId: item.giftId,
+            purchaserName: name.trim(),
+            purchaserEmail: email.trim() || undefined,
+            amount: item.price * item.quantity,
+            paymentStatus: "pending",
+            externalPaymentId: result.billingId,
+            paymentGateway: "abacatepay",
+          });
         }
+
+        clearCart();
+        window.location.href = result.paymentUrl!;
       } else {
         // Credit Card via Asaas - process each item separately
-        const [expiryMonth, expiryYear] = cardExpiry.split("/");
-        
         for (const item of items) {
-          const itemCompletionUrl = `${baseUrl}/agradecimento?gift=${encodeURIComponent(item.name)}&name=${encodeURIComponent(name.trim())}&amount=${item.price * item.quantity}`;
-          
-          const { data, error } = await supabase.functions.invoke("asaas-payment", {
-            body: {
+          const result = await processCreditCardPayment({
+            item: {
               giftId: item.giftId,
-              giftName: item.name,
-              value: item.price * item.quantity,
-              customerName: name.trim(),
-              customerEmail: email.trim(),
-              billingType: "CREDIT_CARD",
-              creditCard: {
-                holderName: cardHolder.trim(),
-                number: cardNumber.replace(/\s/g, ""),
-                expiryMonth: expiryMonth,
-                expiryYear: `20${expiryYear}`,
-                ccv: cardCvv,
-              },
-              creditCardHolderInfo: {
-                name: cardHolder.trim(),
-                email: email.trim(),
-                cpfCnpj: cpf.replace(/\D/g, ""),
-                postalCode: postalCode.replace(/\D/g, ""),
-                addressNumber: addressNumber,
-                phone: phone.replace(/\D/g, ""),
-              },
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+            },
+            customerData: {
+              name: name.trim(),
+              email: email.trim(),
+              phone,
+              cpf,
+              postalCode,
+              addressNumber,
+            },
+            cardData: {
+              holder: cardHolder.trim(),
+              number: cardNumber,
+              expiry: cardExpiry,
+              cvv: cardCvv,
             },
           });
 
-          if (error) throw error;
-
-          if (data.success) {
-            await addPurchase.mutateAsync({
-              giftId: item.giftId,
-              purchaserName: name.trim(),
-              purchaserEmail: email.trim() || undefined,
-              amount: item.price * item.quantity,
-              paymentStatus: "pending",
-              externalPaymentId: data.paymentId,
-              paymentGateway: "asaas",
-            });
-          } else {
-            throw new Error(data.error || "Erro ao processar pagamento");
-          }
+          await addPurchase.mutateAsync({
+            giftId: item.giftId,
+            purchaserName: name.trim(),
+            purchaserEmail: email.trim() || undefined,
+            amount: item.price * item.quantity,
+            paymentStatus: "pending",
+            externalPaymentId: result.paymentId,
+            paymentGateway: "asaas",
+          });
         }
 
         clearCart();
