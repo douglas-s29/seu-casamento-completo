@@ -13,7 +13,9 @@ import {
   Loader2,
   Gift,
   ShieldCheck,
-  Lock
+  Lock,
+  Copy,
+  Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +25,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useNavigate } from "react-router-dom";
-import { validateCheckoutForm } from "@/utils/checkoutValidation";
+import { 
+  validateCheckoutForm, 
+  formatCPF, 
+  formatPhone, 
+  formatCardNumber, 
+  formatCardExpiry,
+  formatCEP 
+} from "@/utils/checkoutValidation";
 import { processPixPayment, processCreditCardPayment } from "@/services/paymentService";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD";
@@ -37,17 +46,25 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
   const [isProcessing, setIsProcessing] = useState(false);
   
+  // PIX result state
+  const [pixResult, setPixResult] = useState<{
+    pixQrCode?: string;
+    pixCopyPaste?: string;
+    invoiceUrl?: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+  
   // Customer info
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [cpf, setCpf] = useState("");
   
   // Credit card fields
   const [cardNumber, setCardNumber] = useState("");
   const [cardHolder, setCardHolder] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
-  const [cpf, setCpf] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [addressNumber, setAddressNumber] = useState("");
 
@@ -58,6 +75,18 @@ const Checkout = () => {
       style: "currency",
       currency: "BRL",
     }).format(price);
+  };
+
+  const handleCopyPix = async () => {
+    if (pixResult?.pixCopyPaste) {
+      await navigator.clipboard.writeText(pixResult.pixCopyPaste);
+      setCopied(true);
+      toast({
+        title: "Código PIX copiado!",
+        description: "Cole no seu aplicativo de banco.",
+      });
+      setTimeout(() => setCopied(false), 3000);
+    }
   };
 
   const handleCheckout = async () => {
@@ -78,7 +107,7 @@ const Checkout = () => {
 
     if (!validation.valid) {
       toast({
-        title: "Erro",
+        title: "Erro de validação",
         description: validation.error,
         variant: "destructive",
       });
@@ -92,7 +121,7 @@ const Checkout = () => {
       const completionUrl = `${baseUrl}/agradecimento?name=${encodeURIComponent(name.trim())}&amount=${totalPrice}&items=${items.length}`;
 
       if (paymentMethod === "PIX") {
-        // Process PIX payment using service
+        // Process PIX payment via Asaas
         const result = await processPixPayment({
           items: items.map(item => ({
             giftId: item.giftId,
@@ -118,13 +147,23 @@ const Checkout = () => {
             purchaserEmail: email.trim() || undefined,
             amount: item.price * item.quantity,
             paymentStatus: "pending",
-            externalPaymentId: result.billingId,
-            paymentGateway: "abacatepay",
+            externalPaymentId: result.paymentId,
+            paymentGateway: "asaas",
           });
         }
 
-        clearCart();
-        window.location.href = result.paymentUrl!;
+        // Show PIX QR code or redirect to invoice
+        if (result.pixQrCode || result.pixCopyPaste) {
+          setPixResult({
+            pixQrCode: result.pixQrCode,
+            pixCopyPaste: result.pixCopyPaste,
+            invoiceUrl: result.invoiceUrl,
+          });
+          clearCart();
+        } else if (result.invoiceUrl) {
+          clearCart();
+          window.location.href = result.invoiceUrl;
+        }
       } else {
         // Credit Card via Asaas - process each item separately
         for (const item of items) {
@@ -172,7 +211,7 @@ const Checkout = () => {
     } catch (error: any) {
       console.error("Checkout error:", error);
       toast({
-        title: "Erro",
+        title: "Erro no pagamento",
         description: error.message || "Erro ao processar pagamento. Tente novamente.",
         variant: "destructive",
       });
@@ -180,6 +219,80 @@ const Checkout = () => {
       setIsProcessing(false);
     }
   };
+
+  // Show PIX result screen
+  if (pixResult) {
+    return (
+      <Layout>
+        <div className="py-12 bg-gradient-to-b from-champagne/30 to-background min-h-screen">
+          <div className="container mx-auto px-4 max-w-lg">
+            <Card>
+              <CardHeader className="text-center">
+                <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                  <ShieldCheck className="w-8 h-8 text-primary" />
+                </div>
+                <CardTitle className="font-serif text-2xl">Pagamento PIX Gerado!</CardTitle>
+                <p className="text-muted-foreground mt-2">
+                  Escaneie o QR Code ou copie o código para pagar
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {pixResult.pixQrCode && (
+                  <div className="flex justify-center">
+                    <img 
+                      src={`data:image/png;base64,${pixResult.pixQrCode}`}
+                      alt="QR Code PIX"
+                      className="w-48 h-48 border rounded-lg"
+                    />
+                  </div>
+                )}
+                
+                {pixResult.pixCopyPaste && (
+                  <div className="space-y-2">
+                    <Label>Código PIX Copia e Cola:</Label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={pixResult.pixCopyPaste} 
+                        readOnly 
+                        className="font-mono text-xs"
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        onClick={handleCopyPix}
+                      >
+                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-center space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Após o pagamento, você receberá a confirmação automaticamente.
+                  </p>
+                  
+                  {pixResult.invoiceUrl && (
+                    <Button asChild variant="outline" className="w-full">
+                      <a href={pixResult.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                        Abrir página de pagamento
+                      </a>
+                    </Button>
+                  )}
+                  
+                  <Button asChild className="w-full bg-gold hover:bg-gold-dark">
+                    <Link to="/presentes">
+                      Voltar para presentes
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -298,7 +411,8 @@ const Checkout = () => {
                         id="name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Seu nome"
+                        placeholder="Seu nome completo"
+                        maxLength={100}
                       />
                     </div>
                     <div className="space-y-2">
@@ -306,8 +420,9 @@ const Checkout = () => {
                       <Input
                         id="phone"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => setPhone(formatPhone(e.target.value))}
                         placeholder="(00) 00000-0000"
+                        maxLength={15}
                       />
                     </div>
                   </div>
@@ -316,18 +431,22 @@ const Checkout = () => {
                     <Input
                       id="cpfGeneral"
                       value={cpf}
-                      onChange={(e) => setCpf(e.target.value)}
+                      onChange={(e) => setCpf(formatCPF(e.target.value))}
                       placeholder="000.000.000-00"
+                      maxLength={14}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">E-mail {paymentMethod === "CREDIT_CARD" ? "*" : "(opcional)"}</Label>
+                    <Label htmlFor="email">
+                      E-mail {paymentMethod === "CREDIT_CARD" ? "*" : "(opcional)"}
+                    </Label>
                     <Input
                       id="email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="seu@email.com"
+                      maxLength={255}
                     />
                   </div>
                 </CardContent>
@@ -366,7 +485,7 @@ const Checkout = () => {
                         <CreditCard className="h-8 w-8 text-gold" />
                         <div>
                           <p className="font-medium">Cartão de Crédito</p>
-                          <p className="text-xs text-muted-foreground">Processado via Asaas</p>
+                          <p className="text-xs text-muted-foreground">Pagamento seguro</p>
                         </div>
                       </Label>
                     </div>
@@ -380,9 +499,10 @@ const Checkout = () => {
                         <Input
                           id="cardNumber"
                           value={cardNumber}
-                          onChange={(e) => setCardNumber(e.target.value)}
+                          onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
                           placeholder="0000 0000 0000 0000"
                           maxLength={19}
+                          autoComplete="cc-number"
                         />
                       </div>
                       
@@ -391,8 +511,10 @@ const Checkout = () => {
                         <Input
                           id="cardHolder"
                           value={cardHolder}
-                          onChange={(e) => setCardHolder(e.target.value)}
-                          placeholder="NOME COMPLETO"
+                          onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                          placeholder="NOME COMO NO CARTÃO"
+                          maxLength={100}
+                          autoComplete="cc-name"
                         />
                       </div>
                       
@@ -402,34 +524,29 @@ const Checkout = () => {
                           <Input
                             id="cardExpiry"
                             value={cardExpiry}
-                            onChange={(e) => setCardExpiry(e.target.value)}
+                            onChange={(e) => setCardExpiry(formatCardExpiry(e.target.value))}
                             placeholder="MM/AA"
                             maxLength={5}
+                            autoComplete="cc-exp"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="cardCvv">CVV *</Label>
                           <Input
                             id="cardCvv"
+                            type="password"
                             value={cardCvv}
-                            onChange={(e) => setCardCvv(e.target.value)}
-                            placeholder="123"
+                            onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                            placeholder="•••"
                             maxLength={4}
+                            autoComplete="cc-csc"
                           />
                         </div>
                       </div>
                       
                       <Separator />
                       
-                      <div className="space-y-2">
-                        <Label htmlFor="cpf">CPF *</Label>
-                        <Input
-                          id="cpf"
-                          value={cpf}
-                          onChange={(e) => setCpf(e.target.value)}
-                          placeholder="000.000.000-00"
-                        />
-                      </div>
+                      <p className="text-sm text-muted-foreground">Endereço de cobrança</p>
                       
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -437,8 +554,9 @@ const Checkout = () => {
                           <Input
                             id="postalCode"
                             value={postalCode}
-                            onChange={(e) => setPostalCode(e.target.value)}
+                            onChange={(e) => setPostalCode(formatCEP(e.target.value))}
                             placeholder="00000-000"
+                            maxLength={9}
                           />
                         </div>
                         <div className="space-y-2">
@@ -448,6 +566,7 @@ const Checkout = () => {
                             value={addressNumber}
                             onChange={(e) => setAddressNumber(e.target.value)}
                             placeholder="123"
+                            maxLength={10}
                           />
                         </div>
                       </div>
@@ -457,69 +576,56 @@ const Checkout = () => {
               </Card>
             </div>
 
-            {/* Order Summary Sidebar */}
+            {/* Order Summary */}
             <div className="lg:col-span-1">
-              <div className="sticky top-24">
-                <Card className="border-gold/20">
-                  <CardHeader className="bg-gold/5">
-                    <CardTitle className="font-serif">Resumo do Pedido</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-6">
-                    <div className="space-y-2">
-                      {items.map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            {item.name} x{item.quantity}
-                          </span>
-                          <span>{formatPrice(item.price * item.quantity)}</span>
-                        </div>
-                      ))}
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="flex justify-between font-serif text-lg">
-                      <span>Total</span>
-                      <span className="text-gold font-bold">{formatPrice(totalPrice)}</span>
-                    </div>
+              <Card className="sticky top-24">
+                <CardHeader>
+                  <CardTitle className="font-serif">Resumo do Pedido</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    {items.map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm">
+                        <span className="truncate max-w-[60%]">
+                          {item.name} x{item.quantity}
+                        </span>
+                        <span>{formatPrice(item.price * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <Separator />
+                  
+                  <div className="flex justify-between font-medium text-lg">
+                    <span>Total</span>
+                    <span className="text-gold">{formatPrice(totalPrice)}</span>
+                  </div>
 
-                    <Button
-                      onClick={handleCheckout}
-                      disabled={isProcessing}
-                      className="w-full bg-gold hover:bg-gold-dark text-primary-foreground h-12 text-base"
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                          Processando...
-                        </>
-                      ) : paymentMethod === "PIX" ? (
-                        <>
-                          <Wallet className="w-5 h-5 mr-2" />
-                          Pagar com PIX
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard className="w-5 h-5 mr-2" />
-                          Pagar com Cartão
-                        </>
-                      )}
-                    </Button>
+                  <Button
+                    className="w-full bg-gold hover:bg-gold-dark text-white"
+                    size="lg"
+                    onClick={handleCheckout}
+                    disabled={isProcessing}
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4 mr-2" />
+                        {paymentMethod === "PIX" ? "Gerar PIX" : "Pagar com Cartão"}
+                      </>
+                    )}
+                  </Button>
 
-                    <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                      <Lock className="w-3 h-3" />
-                      <span>Pagamento 100% seguro</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
-                      <ShieldCheck className="w-4 h-4 text-success flex-shrink-0" />
-                      <span>
-                        Seus dados estão protegidos e não são armazenados em nossos servidores.
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Pagamento seguro via Asaas</span>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 /**
- * Payment processing service
- * Handles communication with payment edge functions
+ * Payment processing service - Asaas Only
+ * Handles all payment types: PIX and Credit Card via Asaas
  */
 
 import { supabase } from "@/integrations/supabase/client";
@@ -50,53 +50,75 @@ export interface PaymentResponse {
   error?: string;
   paymentUrl?: string;
   paymentId?: string;
-  billingId?: string;
+  pixQrCode?: string;
+  pixCopyPaste?: string;
+  invoiceUrl?: string;
 }
 
+/**
+ * Process PIX payment via Asaas
+ * Consolidates all cart items into a single payment
+ */
 export const processPixPayment = async (
   params: PixPaymentParams
 ): Promise<PaymentResponse> => {
-  const products = params.items.map((item) => ({
-    externalId: item.giftId,
-    name: item.name,
-    description: `Presente de Casamento: ${item.name}`,
-    quantity: item.quantity,
-    price: Math.round(item.price * 100), // Convert to cents
-  }));
+  // Calculate total value
+  const totalValue = params.items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
 
-  const { data, error } = await supabase.functions.invoke("abacatepay-payment", {
+  // Use first item name or generic description
+  const description = params.items.length === 1
+    ? params.items[0].name
+    : `${params.items.length} presentes de casamento`;
+
+  const { data, error } = await supabase.functions.invoke("asaas-payment", {
     body: {
-      products,
+      giftId: params.items[0].giftId, // Primary gift ID for reference
+      giftName: description,
+      value: totalValue,
       customerName: params.customerData.name,
       customerEmail: params.customerData.email || undefined,
-      customerPhone: params.customerData.phone.replace(/\D/g, ""),
-      customerTaxId: params.customerData.cpf.replace(/\D/g, ""),
-      returnUrl: params.returnUrl,
-      completionUrl: params.completionUrl,
+      billingType: "PIX",
+      creditCardHolderInfo: {
+        name: params.customerData.name,
+        email: params.customerData.email || `${params.customerData.phone.replace(/\D/g, "")}@guest.temp`,
+        cpfCnpj: params.customerData.cpf.replace(/\D/g, ""),
+        postalCode: "00000000",
+        addressNumber: "0",
+        phone: params.customerData.phone.replace(/\D/g, ""),
+      },
     },
   });
 
   if (error) {
     console.error("PIX payment error:", error);
-    throw error;
+    throw new Error(error.message || "Erro ao processar pagamento PIX");
   }
 
-  if (!data.success || !data.paymentUrl) {
-    throw new Error(data.error || "Erro ao criar cobrança");
+  if (!data.success) {
+    throw new Error(data.error || "Erro ao criar cobrança PIX");
   }
 
   return {
     success: true,
-    paymentUrl: data.paymentUrl,
-    billingId: data.billingId,
+    paymentId: data.paymentId,
+    paymentUrl: data.invoiceUrl,
+    pixQrCode: data.pixQrCode,
+    pixCopyPaste: data.pixCopyPaste,
+    invoiceUrl: data.invoiceUrl,
   };
 };
 
+/**
+ * Process Credit Card payment via Asaas
+ */
 export const processCreditCardPayment = async (
   params: CreditCardPaymentParams
 ): Promise<PaymentResponse> => {
   const [expiryMonth, expiryYear] = params.cardData.expiry.split("/");
-  
+
   const { data, error } = await supabase.functions.invoke("asaas-payment", {
     body: {
       giftId: params.item.giftId,
@@ -109,7 +131,7 @@ export const processCreditCardPayment = async (
         holderName: params.cardData.holder,
         number: params.cardData.number.replace(/\s/g, ""),
         expiryMonth,
-        expiryYear: `20${expiryYear}`,
+        expiryYear: expiryYear.length === 2 ? `20${expiryYear}` : expiryYear,
         ccv: params.cardData.cvv,
       },
       creditCardHolderInfo: {
@@ -125,7 +147,7 @@ export const processCreditCardPayment = async (
 
   if (error) {
     console.error("Credit card payment error:", error);
-    throw error;
+    throw new Error(error.message || "Erro ao processar pagamento");
   }
 
   if (!data.success) {
@@ -135,5 +157,6 @@ export const processCreditCardPayment = async (
   return {
     success: true,
     paymentId: data.paymentId,
+    invoiceUrl: data.invoiceUrl,
   };
 };
