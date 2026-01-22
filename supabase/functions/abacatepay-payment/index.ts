@@ -3,10 +3,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface Product {
+  externalId: string;
+  name: string;
+  description: string;
+  quantity: number;
+  price: number; // in cents
+}
+
 interface PaymentRequest {
-  giftId: string;
-  giftName: string;
-  value: number;
+  products: Product[];
   customerName: string;
   customerEmail?: string;
   customerPhone: string;
@@ -32,42 +38,29 @@ Deno.serve(async (req) => {
 
     const body: PaymentRequest = await req.json();
     console.log("Payment request received:", { 
-      giftId: body.giftId, 
-      giftName: body.giftName,
-      value: body.value,
-      customerName: body.customerName 
+      products: body.products?.length,
+      customerName: body.customerName,
+      customerPhone: body.customerPhone,
     });
 
-    // Valor em centavos
-    const amountInCents = Math.round(body.value * 100);
-
-    // Criar cobrança no AbacatePay (apenas PIX disponível)
+    // Build payload according to AbacatePay documentation
     const billingPayload = {
       frequency: "ONE_TIME",
       methods: ["PIX"],
-      products: [
-        {
-          externalId: body.giftId,
-          name: body.giftName,
-          description: `Presente de Casamento: ${body.giftName}`,
-          quantity: 1,
-          price: amountInCents,
-        },
-      ],
+      products: body.products,
       returnUrl: body.returnUrl,
       completionUrl: body.completionUrl,
       customer: {
         name: body.customerName,
-        email: body.customerEmail || `${body.customerPhone}@temp.com`,
+        email: body.customerEmail || `${body.customerPhone}@cliente.temp`,
         cellphone: body.customerPhone,
       },
       metadata: {
-        giftId: body.giftId,
-        purchaserName: body.customerName,
+        source: "wedding-gifts",
       },
     };
 
-    console.log("Creating billing with payload:", billingPayload);
+    console.log("Creating billing with payload:", JSON.stringify(billingPayload, null, 2));
 
     const billingResponse = await fetch("https://api.abacatepay.com/v1/billing/create", {
       method: "POST",
@@ -79,7 +72,7 @@ Deno.serve(async (req) => {
     });
 
     const billingData = await billingResponse.json();
-    console.log("AbacatePay response:", billingData);
+    console.log("AbacatePay response:", JSON.stringify(billingData, null, 2));
 
     if (billingData.error) {
       console.error("AbacatePay error:", billingData.error);
