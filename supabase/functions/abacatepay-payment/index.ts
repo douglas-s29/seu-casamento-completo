@@ -9,6 +9,7 @@ interface PaymentRequest {
   value: number;
   customerName: string;
   customerEmail?: string;
+  customerPhone: string;
   returnUrl: string;
   completionUrl: string;
 }
@@ -57,7 +58,8 @@ Deno.serve(async (req) => {
       completionUrl: body.completionUrl,
       customer: {
         name: body.customerName,
-        email: body.customerEmail || undefined,
+        email: body.customerEmail || `${body.customerPhone}@temp.com`,
+        cellphone: body.customerPhone,
       },
       metadata: {
         giftId: body.giftId,
