@@ -47,6 +47,18 @@ const Presentes = () => {
       return;
     }
 
+    // Validate phone for PIX
+    if (paymentMethod === "PIX_BOLETO") {
+      if (!phone.trim()) {
+        toast({
+          title: "Erro",
+          description: "Por favor, informe seu telefone para pagamento PIX.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // Validate credit card fields if paying by card
     if (paymentMethod === "CREDIT_CARD") {
       if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !cpf || !phone || !postalCode || !addressNumber || !purchaserEmail) {
@@ -66,7 +78,7 @@ const Presentes = () => {
       const completionUrl = `${baseUrl}/agradecimento?gift=${encodeURIComponent(selectedGift.name)}&name=${encodeURIComponent(purchaserName.trim())}&amount=${selectedGift.price}`;
 
       if (paymentMethod === "PIX_BOLETO") {
-        // Use AbacatePay for PIX/Boleto
+        // Use AbacatePay for PIX
         const { data, error } = await supabase.functions.invoke("abacatepay-payment", {
           body: {
             giftId: selectedGift.id,
@@ -74,6 +86,7 @@ const Presentes = () => {
             value: Number(selectedGift.price),
             customerName: purchaserName.trim(),
             customerEmail: purchaserEmail.trim() || undefined,
+            customerPhone: phone.replace(/\D/g, ""),
             returnUrl,
             completionUrl,
           },
@@ -397,6 +410,19 @@ const Presentes = () => {
                 </div>
               </RadioGroup>
             </div>
+
+            {/* Phone field for PIX */}
+            {paymentMethod === "PIX_BOLETO" && (
+              <div className="space-y-2 border-t pt-4">
+                <Label htmlFor="pixPhone">Seu telefone *</Label>
+                <Input
+                  id="pixPhone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
+            )}
 
             {/* Credit Card Fields */}
             {paymentMethod === "CREDIT_CARD" && (
