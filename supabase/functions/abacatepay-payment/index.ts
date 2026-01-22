@@ -16,6 +16,7 @@ interface PaymentRequest {
   customerName: string;
   customerEmail?: string;
   customerPhone: string;
+  customerTaxId: string;
   returnUrl: string;
   completionUrl: string;
 }
@@ -54,6 +55,7 @@ Deno.serve(async (req) => {
         name: body.customerName,
         email: body.customerEmail || `${body.customerPhone}@cliente.temp`,
         cellphone: body.customerPhone,
+        taxId: body.customerTaxId,
       },
       metadata: {
         source: "wedding-gifts",
