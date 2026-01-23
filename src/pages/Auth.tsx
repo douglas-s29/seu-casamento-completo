@@ -63,7 +63,7 @@ const Auth = () => {
 
   // Redirect if already logged in as admin
   if (!loading && user && isAdmin) {
-    navigate("/admin/dashboard");
+    navigate("/x7k9m2p8/dashboard");
     return null;
   }
 
@@ -141,7 +141,7 @@ const Auth = () => {
           title: "Bem-vindo!",
           description: "Login realizado com sucesso.",
         });
-        navigate("/admin/dashboard");
+        navigate("/x7k9m2p8/dashboard");
       }
     } catch (error) {
       toast({
