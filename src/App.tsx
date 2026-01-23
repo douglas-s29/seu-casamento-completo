@@ -35,8 +35,9 @@ const App = () => (
           <Route path="/confirmar" element={<Confirmar />} />
           <Route path="/recados" element={<Recados />} />
           <Route path="/agradecimento" element={<Agradecimento />} />
-          <Route path="/admin" element={<Auth />} />
-          <Route path="/admin" element={<AdminLayout />}>
+          {/* Secret admin route - do not share publicly */}
+          <Route path="/x7k9m2p8" element={<Auth />} />
+          <Route path="/x7k9m2p8" element={<AdminLayout />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="convidados" element={<AdminConvidados />} />
             <Route path="presentes" element={<AdminPresentes />} />

@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
+// Secret admin route path - do not share publicly
+const ADMIN_BASE = "/x7k9m2p8";
+
 const navItems = [
-  { path: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/admin/convidados", label: "Convidados", icon: Users },
-  { path: "/admin/presentes", label: "Presentes", icon: Gift },
-  { path: "/admin/recados", label: "Recados", icon: MessageCircle },
-  { path: "/admin/configuracoes", label: "Configurações", icon: Settings },
+  { path: `${ADMIN_BASE}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
+  { path: `${ADMIN_BASE}/convidados`, label: "Convidados", icon: Users },
+  { path: `${ADMIN_BASE}/presentes`, label: "Presentes", icon: Gift },
+  { path: `${ADMIN_BASE}/recados`, label: "Recados", icon: MessageCircle },
+  { path: `${ADMIN_BASE}/configuracoes`, label: "Configurações", icon: Settings },
 ];
 
 const AdminLayout = () => {
@@ -22,7 +25,7 @@ const AdminLayout = () => {
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
-      navigate("/admin");
+      navigate(ADMIN_BASE);
     }
   }, [user, isAdmin, loading, navigate]);
 
@@ -32,7 +35,7 @@ const AdminLayout = () => {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate("/admin");
+    navigate(ADMIN_BASE);
   };
 
   if (loading) {

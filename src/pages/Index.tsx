@@ -8,13 +8,24 @@ import { Button } from "@/components/ui/button";
 const Index = () => {
   const { data: settings, isLoading } = useWeddingSettings();
 
+  // Show loading state while fetching to avoid flash of placeholder names
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+          <div className="animate-pulse text-gold font-serif text-2xl">Carregando...</div>
+        </div>
+      </Layout>
+    );
+  }
+
   const weddingDate = settings?.wedding_date 
     ? new Date(settings.wedding_date) 
     : null;
 
   const groomName = settings?.groom_name || "Noivo";
   const brideName = settings?.bride_name || "Noiva";
-  const backgroundImageUrl = (settings as any)?.background_image_url;
+  const backgroundImageUrl = settings?.background_image_url;
 
   return (
     <Layout>
